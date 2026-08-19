@@ -1,0 +1,76 @@
+.vs/
+
+# Visual Studio / .NET generated files
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build folders
+bin/
+obj/
+
+# NuGet
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+packages/
+
+# MSBuild
+*.pidb
+*.userprefs
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Rider
+.idea/
+*.sln.iml
+
+# Logs
+*.log
+TestResults/
+
+# Publish
+_publish/
+publish/
+*.Publish.xml
+
+# Runtime
+*.dll
+*.exe
+*.cache
+*.db
+*.pdb
+
+# Rider, VSCode caches
+.idea/
+.vscode/
+
+# Resharper
+_ReSharper*/
+*.DotSettings.user
+
+# dotnet user secrets
+secrets.json
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Local appsettings
+appsettings.Local.json
+appsettings.*.Local.json
+
+# JetBrains Rider
+.idea/
+
+# Others
+*.vspscc
+*.vsscc
+
+# Ignore node_modules if present
+node_modules/
+
+# Ignore Visual Studio Code workspace file
+*.code-workspace

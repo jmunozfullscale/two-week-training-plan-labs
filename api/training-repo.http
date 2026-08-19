@@ -1,6 +1,0 @@
-@training_repo_HostAddress = http://localhost:5233
-
-GET {{training_repo_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

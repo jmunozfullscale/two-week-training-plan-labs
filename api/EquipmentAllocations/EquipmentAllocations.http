@@ -1,0 +1,6 @@
+@EquipmentAllocations_HostAddress = http://localhost:5100
+
+GET {{EquipmentAllocations_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
