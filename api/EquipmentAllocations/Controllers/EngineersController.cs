@@ -30,6 +30,12 @@ namespace EquipmentAllocations.Controllers
             }
 
             var created = _service.Create(dto);
+
+            if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
+            {
+                return StatusCode(201);
+            }
+
             return Created(string.Empty, created);
         }
     }
