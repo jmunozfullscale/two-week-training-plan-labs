@@ -8,10 +8,13 @@ namespace EquipmentAllocations
     {
         public static IServiceCollection AddEquipmentAllocationsServices(this IServiceCollection services)
         {
-            // Singleton and in-memory stores only for PR1
-            services.AddSingleton<IEngineerService, EngineerService>();
-            services.AddSingleton<IDeviceService, DeviceService>();
-            services.AddSingleton<IBookingService, BookingService>();
+            // Register EF services as scoped (might go transactional on these services as well)
+            services.AddScoped<IEngineerService, EfEngineerService>();
+            services.AddScoped<IDeviceService, EfDeviceService>();
+            services.AddScoped<IBookingService, EfBookingService>();
+
+            // Transactional EF service registered as scoped
+            services.AddScoped<IBookingTransactionalService, EfBookingTransactionalService>();
 
             return services;
         }
