@@ -24,7 +24,12 @@ ORDER BY StartDate;
   1. As mentioned in [MS Learn: Clustered and Nonclustered Indexes Described](https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described), a table without an index supporting the search predicate forces SQL Server to perform a full **Clustered Index Scan**. Which means every single data page of `dbo.Bookings` (which has ~120,000 rows) must be loaded into the memory and scanned, resulting in O(N) disk/buffer pool I/O operations.
   2. The scanned rows are also not pre-sorted by `StartDate`. Therefore, the query engine must explicitly introduce a **Sort** operator in memory/tempdb to process `ORDER BY StartDate`, which would also add more CPU and memory overhead.
 
-### 3. Execution Plan (Before and After)
+### 3. Execution Plan & Timings (Before and After)
+
+**Measurements (`SET STATISTICS IO, TIME ON`):**
+- **Baseline:** 1,245 logical reads, 0 ms CPU time, 108 ms elapsed time.
+- **Tuned:** 4 logical reads, 0 ms CPU time, 81 ms elapsed time.
+- **Improvement:** 99.68% reduction in logical reads (1,245 -> 4), 25% reduction in elapsed time (108ms -> 81ms).
 
 **Before tuning:**
 
@@ -54,7 +59,7 @@ The index design followed here (and for the indexes created in the next question
 
 - **Leading Key Column (`DeviceId`):** Matches the equality operator (`DeviceId = 17`). Putting equality predicate columns first allows B+ tree traversal to perform an immediate **Index Seek**.
 - **Second Key Column (`StartDate`):** Matches the range predicate (`>=` and `<`) AND satisfies `ORDER BY StartDate` naturally in B-tree key order, eliminating the explicit Sort operator entirely as seen in the tuned execution plan earlier.
-- **`INCLUDE` Nonkey Columns (`EngineerId, EndDate, Status`):** Keeps the index key size small while also making the index a **covering index**. Qouted again from MS Notes:
+- **`INCLUDE` Nonkey Columns (`EngineerId, EndDate, Status`):** Keeps the index key size small while also making the index a **covering index**. Quoted again from MS Notes:
   > *"Redesign nonclustered indexes that have a large index key size so that only columns used for searching and lookups are key columns. Make all other columns that cover the query into nonkey columns."*
 
 ---
@@ -77,11 +82,16 @@ It wouldn't work because `YEAR(StartDate)` wraps the column in a scalar function
 
 To evaluate `YEAR(StartDate) = 2026`, SQL Server cannot perform an **Index Seek** and is forced to scan every single row in the table to run the function row-by-row. Per [MS Learn: Index Architecture Guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide), applying functions to index key columns prevents Search Argument (SARGable) optimization.
 
-### 3. Execution Plan (Before and After)
+### 3. Execution Plan & Timings (Before and After)
+
+**Measurements (`SET STATISTICS IO, TIME ON`):**
+- **Baseline:** 1,245 logical reads, 16 ms CPU time, 193 ms elapsed time.
+- **Tuned:** 169 logical reads, 32 ms CPU time, 188 ms elapsed time.
+- **Improvement:** 86.43% reduction in logical reads (1,245 -> 169), 2.59% reduction in elapsed time (193ms -> 188ms).
 
 **Before tuning:**
 
-![Q2 Baseline Execution Plan (Before Fix)](images/q2-baseline-plpan.png)
+![Q2 Baseline Execution Plan (Before Fix)](images/q2-baseline-plan.png)
 *Figure 2.1: Q2 Non-SARGable Clustered Index Scan*
 
 **After tuning:**
@@ -122,14 +132,23 @@ ORDER BY StartDate DESC;
 #### Problem
 `SELECT *` requests unneeded columns (`CreatedOn` and `Payload NVARCHAR(MAX)`). Since one of the unneeded columns is a large object, it prevents index coverage and it also inflates sort memory. 
 
-### 3. Execution Plan (Before and After)
+#### Key Lookup Operator & Memory Overhead (Explained Further)
+The baseline plan performs a full **Clustered Index Scan** because no nonclustered index exists. But, even if a nonclustered index were added on `(DeviceId, Status)`, querying `SELECT *` over `Payload NVARCHAR(MAX)` prevents index coverage. Because of this, the **Key Lookup** operator is the main contributor to the bad query performance. Each matching row triggers a separate Key Lookup into the clustered index to fetch the wide large object (also known as LOB) `Payload` column. This is a row-by-row fetch, which is very inefficient. Additionally, fetching wide LOB columns inflates sort memory allocations in tempdb during `ORDER BY StartDate DESC`.
+
+### 3. Execution Plan & Timings (Before and After)
+
+**Measurements (`SET STATISTICS IO, TIME ON`):**
+- **Baseline (`SELECT *` without index):** 1,245 logical reads, 16 ms CPU time, 109 ms elapsed time.
+- **Semi-tuned (Explicit column projection without index):** 1,245 logical reads, 16 ms CPU time, 92 ms elapsed time (reduced memory/sort overhead).
+- **Tuned (Explicit column projection + Q1 covering index):** 26 logical reads, 0 ms CPU time, 66 ms elapsed time.
+- **Improvement:** 97.91% reduction in logical reads (1,245 -> 26), 100% reduction in CPU time (16ms -> 0ms), 39.45% reduction in elapsed time (109ms -> 66ms).
 
 **Before tuning:**
 
 ![Q3 Baseline Execution Plan (Before Fix)](./images/q3-baseline-plan.png)
 *Figure 3.1: Q3 Baseline Sort and Clustered Index Scan*
 
-**After removing SELECT * (without Q1 index)**
+**After removing SELECT * (without Q1 index):**
 
 ![Q3 Tuned Execution Plan (Without Q1 Index)](./images/q3-pretuned-noindex-plan.png)
 *Figure 3.2: Q3 Semi-tuned Sort and Clustered Index Scan*
@@ -167,7 +186,14 @@ WHERE dbo.IsOverdue(EndDate, Status) = 1;
 #### Problem
 `dbo.IsOverdue` is a **Scalar User-Defined Function (UDF)**. In our case, this function is iteratively executed row-by-row. This phenomenon is called **RBAR**. ([MS Learn: UDF Inlining](https://learn.microsoft.com/en-us/sql/relational-databases/user-defined-functions/scalar-udf-inlining)). Parallelism is also disabled since SQL Server does not allow intra-query parallelism in queries that invoke UDFs.
 
-### 3. Execution Plan (Before and After)
+### 3. Execution Plan & Timings (Before and After)
+
+**Measurements (`SET STATISTICS IO, TIME ON`):**
+- **Baseline (Scalar UDF `dbo.IsOverdue`):** 1,245 logical reads, 281 ms CPU time (iterative UDF calls row-by-row), 350 ms elapsed time.
+- **Tuned (Inlined predicate + Filtered Index):** 870 logical reads, 0 ms CPU time, 98 ms elapsed time.
+- **Improvement:** 100% reduction in CPU time (281ms -> 0ms), ~72% reduction in elapsed time (350ms -> 98ms), 30.12% reduction in logical reads (1,245 -> 870).
+
+**Before tuning:**
 - **Clustered Index Scan:** Reads all ~120,000 rows.
 - **Filter Operator:** Appears cheap in plan diagram, masking 120,000 function executions.
 - **Single-Threaded:** Forced DOP = 1.
@@ -177,7 +203,7 @@ WHERE dbo.IsOverdue(EndDate, Status) = 1;
 ![Q4 Baseline Execution Plan (Before Fix)](images/q4-baseline-plan.png)
 *Figure 4.1: Q4 Scalar UDF, Iterative Filter & Scan*
 
-**After tuning**
+**After tuning:**
 
 ![Q4 Tuned Execution Plan (After Fix)](images/q4-tuned-plan.png)
 *Figure 4.2: Q4 Inlined Filtered Index Seek*
