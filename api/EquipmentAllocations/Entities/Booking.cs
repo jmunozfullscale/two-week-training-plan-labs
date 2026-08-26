@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace EquipmentAllocations.Entities
 {
     public class Booking
@@ -13,5 +15,8 @@ namespace EquipmentAllocations.Entities
         public System.DateTime CreatedOn { get; set; }
         public string? Payload { get; set; }
         public string? IdempotencyKey { get; set; }
+
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 }

@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// EF DbContext: Sse SQLite file by default for now (Data/equipment_allocations.db)
+// EF DbContext: Use SQLite file by default for now (Data/equipment_allocations.db)
 var connectionString = builder.Configuration.GetConnectionString("EquipmentAllocations") ?? "Data Source=Data/equipment_allocations.db";
 builder.Services.AddDbContext<EquipmentAllocations.Data.EquipmentAllocationsDbContext>(opts =>
     opts.UseSqlite(connectionString));

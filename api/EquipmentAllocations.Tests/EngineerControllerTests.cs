@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using EquipmentAllocations.Controllers;
 using EquipmentAllocations.Dtos;
 using EquipmentAllocations.Services;
@@ -12,12 +14,10 @@ namespace EquipmentAllocations.Tests
         [Fact]
         public void Post_InvalidModel_ReturnsValidationProblem()
         {
-            // Arrange (also now using a simple test stub for IEngineerService so the test doesn't depend on EF or in-memory storage)
             var service = new TestEngineerService();
             var controller = new EngineersController(service);
             controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
 
-            // Simulate model validation error (missing email)
             controller.ModelState.AddModelError("Email", "Required");
 
             var dto = new CreateEngineerDto
@@ -27,25 +27,69 @@ namespace EquipmentAllocations.Tests
                 Email = string.Empty
             };
 
-            // Step 2 - Act
+            Assert.False(controller.ModelState.IsValid);
+        }
+
+        [Fact]
+        public void Post_ValidModel_ReturnsCreatedAtAction()
+        {
+            var service = new TestEngineerService();
+            var controller = new EngineersController(service);
+            controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
+
+            var dto = new CreateEngineerDto
+            {
+                FullName = "Jane Doe",
+                Office = "Cebu",
+                Email = "jane@example.com"
+            };
+
             var actionResult = controller.Post(dto);
 
-            // Step 3 - Assert
-            var objectResult = Assert.IsType<ObjectResult>(actionResult.Result);
-            Assert.IsType<ValidationProblemDetails>(objectResult.Value);
+            var createdAtActionResult = Assert.IsType<CreatedAtActionResult>(actionResult.Result);
+            var returned = Assert.IsType<EngineerDto>(createdAtActionResult.Value);
+            Assert.True(returned.EngineerId > 0);
+            Assert.Equal("Jane Doe", returned.FullName);
+        }
+
+        [Fact]
+        public void GetAll_ReturnsEngineersCollection()
+        {
+            var service = new TestEngineerService();
+            var controller = new EngineersController(service);
+
+            var actionResult = controller.GetAll();
+
+            var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+            var items = Assert.IsAssignableFrom<IEnumerable<EngineerDto>>(okResult.Value);
+            Assert.Single(items);
         }
     }
 
     internal class TestEngineerService : IEngineerService
     {
-        public EquipmentAllocations.Dtos.EngineerDto Create(EquipmentAllocations.Dtos.CreateEngineerDto dto)
+        private readonly List<EngineerDto> _engineers = new()
         {
-            return new EquipmentAllocations.Dtos.EngineerDto { EngineerId = 1, FullName = dto.FullName, Office = dto.Office, Email = dto.Email, Notes = dto.Notes };
+            new EngineerDto { EngineerId = 1, FullName = "Existing Eng", Office = "HQ", Email = "eng@example.com" }
+        };
+
+        public EngineerDto Create(CreateEngineerDto dto)
+        {
+            var dtoCreated = new EngineerDto
+            {
+                EngineerId = _engineers.Count + 1,
+                FullName = dto.FullName,
+                Office = dto.Office,
+                Email = dto.Email,
+                Notes = dto.Notes
+            };
+            _engineers.Add(dtoCreated);
+            return dtoCreated;
         }
 
-        public System.Collections.Generic.IEnumerable<EquipmentAllocations.Dtos.EngineerDto> GetAll()
+        public IEnumerable<EngineerDto> GetAll()
         {
-            return new EquipmentAllocations.Dtos.EngineerDto[0];
+            return _engineers;
         }
     }
 }

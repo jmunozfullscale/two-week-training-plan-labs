@@ -19,31 +19,39 @@ namespace EquipmentAllocations.Services
 
         public async Task<BookingDto> IssueBookingAsync(CreateBookingDto dto, string? idempotencyKey)
         {
-            // Ensure device and engineer exist
-            var device = await _db.Devices.FindAsync(dto.DeviceId);
-            if (device == null) throw new InvalidOperationException($"Device {dto.DeviceId} not found");
-
-            var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
-            if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
-
             // Start transaction
             await using var tx = await _db.Database.BeginTransactionAsync();
 
             try
             {
+                // Check idempotency key first before device state validation
                 if (!string.IsNullOrEmpty(idempotencyKey))
                 {
-                    var existing = await _db.Bookings.FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey);
+                    var existing = await _db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey);
                     if (existing != null)
                     {
-                        // Idempotency duplicate: respond with conflict
                         throw new IdempotencyConflictException(existing.BookingId);
                     }
                 }
 
+                // Ensure device exists and is available for allocation
+                var device = await _db.Devices.FindAsync(dto.DeviceId);
+                if (device == null) throw new InvalidOperationException($"Device {dto.DeviceId} not found");
+                if (!string.Equals(device.Status, "available", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Device {dto.DeviceId} is not available for allocation (current status: '{device.Status}')");
+                }
+
+                // Ensure engineer exists
+                var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
+                if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
+
                 // Check overlapping booking for same device
                 var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
                 if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
+
+                // Atomic state transition: allocate device
+                device.Status = "allocated";
 
                 var entity = new Booking
                 {
@@ -58,14 +66,13 @@ namespace EquipmentAllocations.Services
                 };
 
                 _db.Bookings.Add(entity);
+
                 try
                 {
                     await _db.SaveChangesAsync();
                 }
                 catch (DbUpdateException)
                 {
-                    // Possible concurrent insert on unique idempotency key: check if existing booking already exists?
-                    await tx.RollbackAsync();
                     if (!string.IsNullOrEmpty(idempotencyKey))
                     {
                         var existingAfter = await _db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey);
@@ -74,7 +81,6 @@ namespace EquipmentAllocations.Services
                             throw new IdempotencyConflictException(existingAfter.BookingId);
                         }
                     }
-
                     throw;
                 }
 

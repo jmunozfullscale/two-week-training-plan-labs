@@ -37,6 +37,7 @@ namespace EquipmentAllocations.Data
                 bb.HasKey(b => b.BookingId);
                 bb.Property(b => b.Status).HasMaxLength(20).IsRequired();
                 bb.Property(b => b.IdempotencyKey).HasMaxLength(200);
+                bb.Property(b => b.RowVersion).IsRowVersion();
                 bb.HasIndex(b => b.IdempotencyKey).IsUnique();
                 bb.HasOne(b => b.Device).WithMany().HasForeignKey(b => b.DeviceId).OnDelete(DeleteBehavior.Cascade);
                 bb.HasOne(b => b.Engineer).WithMany().HasForeignKey(b => b.EngineerId).OnDelete(DeleteBehavior.Cascade);

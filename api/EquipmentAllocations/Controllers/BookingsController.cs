@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Threading.Tasks;
 using EquipmentAllocations.Dtos;
 using EquipmentAllocations.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -10,10 +13,12 @@ namespace EquipmentAllocations.Controllers
     public class BookingsController : ControllerBase
     {
         private readonly IBookingService _service;
+        private readonly IBookingTransactionalService _transactionalService;
 
-        public BookingsController(IBookingService service)
+        public BookingsController(IBookingService service, IBookingTransactionalService transactionalService)
         {
             _service = service;
+            _transactionalService = transactionalService;
         }
 
         [HttpGet]
@@ -25,60 +30,31 @@ namespace EquipmentAllocations.Controllers
         [HttpPost]
         public ActionResult<BookingDto> Post([FromBody] CreateBookingDto dto)
         {
-            if (!ModelState.IsValid)
-            {
-                return ValidationProblem(ModelState);
-            }
-
             var created = _service.Create(dto);
-
-            if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
-            {
-                return StatusCode(201);
-            }
-
-            return Created(string.Empty, created);
+            return CreatedAtAction(nameof(GetAll), new { id = created.BookingId }, created);
         }
 
         [HttpPost("issue")]
-        public async System.Threading.Tasks.Task<ActionResult<BookingDto>> Issue([FromHeader(Name = "Idempotency-Key")] string? idempotencyKey, [FromBody] CreateBookingDto dto)
+        public async Task<ActionResult<BookingDto>> Issue(
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+            [FromBody] CreateBookingDto dto)
         {
-            if (!ModelState.IsValid)
+            if (string.IsNullOrWhiteSpace(idempotencyKey))
             {
-                return ValidationProblem(ModelState);
+                return BadRequest(new { message = "Idempotency-Key header is required" });
             }
-
 
             try
             {
-                var svc = HttpContext.RequestServices.GetService(typeof(IBookingTransactionalService)) as IBookingTransactionalService;
-                if (svc == null) return StatusCode(500, "Transactional booking service not available");
-
-                var created = await svc.IssueBookingAsync(dto, idempotencyKey);
-
-                if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
-                {
-                    return StatusCode(201);
-                }
-
-                return Created(string.Empty, created);
+                var created = await _transactionalService.IssueBookingAsync(dto, idempotencyKey);
+                return CreatedAtAction(nameof(GetAll), new { id = created.BookingId }, created);
             }
             catch (IdempotencyConflictException ex)
             {
-                if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
-                {
-                    return StatusCode(409);
-                }
-
                 return Conflict(new { message = "Idempotency key conflict", existingBookingId = ex.ExistingBookingId });
             }
             catch (InvalidOperationException ex)
             {
-                if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
-                {
-                    return StatusCode(400);
-                }
-
                 return BadRequest(new { message = ex.Message });
             }
         }

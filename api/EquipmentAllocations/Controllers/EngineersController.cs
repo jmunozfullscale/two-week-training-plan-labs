@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using EquipmentAllocations.Dtos;
 using EquipmentAllocations.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -24,19 +25,8 @@ namespace EquipmentAllocations.Controllers
         [HttpPost]
         public ActionResult<EngineerDto> Post([FromBody] CreateEngineerDto dto)
         {
-            if (!ModelState.IsValid)
-            {
-                return ValidationProblem(ModelState);
-            }
-
             var created = _service.Create(dto);
-
-            if (Request.Headers.ContainsKey("X-Test-NoResponseBody"))
-            {
-                return StatusCode(201);
-            }
-
-            return Created(string.Empty, created);
+            return CreatedAtAction(nameof(GetAll), new { id = created.EngineerId }, created);
         }
     }
 }
