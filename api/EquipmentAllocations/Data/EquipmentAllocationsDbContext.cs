@@ -14,6 +14,12 @@ namespace EquipmentAllocations.Data
         public DbSet<Device> Devices => Set<Device>();
         public DbSet<Booking> Bookings => Set<Booking>();
 
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Engineer>(eb =>
@@ -39,6 +45,7 @@ namespace EquipmentAllocations.Data
                 bb.Property(b => b.IdempotencyKey).HasMaxLength(200);
                 bb.Property(b => b.RowVersion).IsRowVersion();
                 bb.HasIndex(b => b.IdempotencyKey).IsUnique();
+                bb.HasIndex(b => new { b.DeviceId, b.StartDate }).HasDatabaseName("IX_Bookings_DeviceId_StartDate");
                 bb.HasOne(b => b.Device).WithMany().HasForeignKey(b => b.DeviceId).OnDelete(DeleteBehavior.Cascade);
                 bb.HasOne(b => b.Engineer).WithMany().HasForeignKey(b => b.EngineerId).OnDelete(DeleteBehavior.Cascade);
             });

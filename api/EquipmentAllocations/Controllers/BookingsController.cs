@@ -10,6 +10,7 @@ namespace EquipmentAllocations.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Route("api/allocations")]
     public class BookingsController : ControllerBase
     {
         private readonly IBookingService _service;

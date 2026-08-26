@@ -7,6 +7,7 @@ namespace EquipmentAllocations.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Route("api/employees")]
     public class EngineersController : ControllerBase
     {
         private readonly IEngineerService _service;

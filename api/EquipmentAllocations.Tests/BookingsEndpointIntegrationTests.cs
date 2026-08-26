@@ -32,11 +32,14 @@ namespace EquipmentAllocations.Tests
 
             var factory = _factory.WithWebHostBuilder(builder =>
             {
+                builder.UseSetting(Microsoft.AspNetCore.Hosting.WebHostDefaults.EnvironmentKey, "Testing");
                 builder.ConfigureServices(services =>
                 {
-                    // Remove existing DbContext registration
-                    var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<EquipmentAllocationsDbContext>));
-                    if (descriptor != null) services.Remove(descriptor);
+                    // Remove existing DbContext and provider registrations
+                    var descriptors = services.Where(d => d.ServiceType == typeof(DbContextOptions<EquipmentAllocationsDbContext>) || 
+                                                          d.ServiceType == typeof(DbContextOptions) ||
+                                                          d.ServiceType == typeof(EquipmentAllocationsDbContext)).ToList();
+                    foreach (var d in descriptors) services.Remove(d);
 
                     // Register SQLite in-memory with open connection
                     services.AddDbContext<EquipmentAllocationsDbContext>(options => options.UseSqlite(conn));
@@ -110,6 +113,67 @@ namespace EquipmentAllocations.Tests
                 Assert.NotNull(updatedDevice);
                 Assert.Equal("allocated", updatedDevice.Status);
             }
+
+            conn.Dispose();
+        }
+
+        [Fact]
+        public async Task IssueFlow_FullWorkingSlice_EndToEnd_SpecRoutes()
+        {
+            var factory = CreateFactoryWithSqlite(out var conn);
+            var client = factory.CreateClient();
+
+            // 1. Create Employee via spec route /api/employees
+            var eng = new CreateEngineerDto { FullName = "Spec Employee", Office = "Manila", Email = "employee@example.com" };
+            var engResp = await client.PostAsJsonAsync("/api/employees", eng);
+            Assert.Equal(HttpStatusCode.Created, engResp.StatusCode);
+
+            int createdEngId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdEngId = db.Engineers.First(e => e.Email == eng.Email).EngineerId;
+            }
+
+            // 2. Create Equipment Device via /api/devices
+            var dev = new CreateDeviceDto { AssetTag = "SPEC-101", Kind = "vr", Status = "available", PurchasedOn = DateTime.UtcNow };
+            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
+            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
+
+            int createdDevId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdDevId = db.Devices.First(d => d.AssetTag == dev.AssetTag).DeviceId;
+            }
+
+            // 3. Issue Allocation via spec route /api/allocations/issue
+            var booking = new CreateBookingDto
+            {
+                DeviceId = createdDevId,
+                EngineerId = createdEngId,
+                StartDate = DateTime.UtcNow.Date.AddDays(10),
+                EndDate = DateTime.UtcNow.Date.AddDays(12),
+                Status = "reserved"
+            };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            req.Headers.Add("Idempotency-Key", "spec-slice-key-1");
+
+            var resp = await client.SendAsync(req);
+            Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+
+            // 4. Verify retried allocation with same key returns 409 Conflict
+            var reqDup = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            reqDup.Headers.Add("Idempotency-Key", "spec-slice-key-1");
+
+            var respDup = await client.SendAsync(reqDup);
+            Assert.Equal(HttpStatusCode.Conflict, respDup.StatusCode);
+
+            // 5. Verify issuing allocation for the now-allocated device with a new key fails (400 Bad Request)
+            var reqUnavailable = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            reqUnavailable.Headers.Add("Idempotency-Key", "spec-slice-key-2");
+
+            var respUnavailable = await client.SendAsync(reqUnavailable);
+            Assert.Equal(HttpStatusCode.BadRequest, respUnavailable.StatusCode);
 
             conn.Dispose();
         }
