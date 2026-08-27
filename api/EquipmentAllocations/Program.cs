@@ -7,10 +7,23 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// EF DbContext: Sse SQLite file by default for now (Data/equipment_allocations.db)
-var connectionString = builder.Configuration.GetConnectionString("EquipmentAllocations") ?? "Data Source=Data/equipment_allocations.db";
+// EF DbContext: Support SQL Server if configured, otherwise default to local SQLite file
+var connectionString = builder.Configuration.GetConnectionString("EquipmentAllocations");
 builder.Services.AddDbContext<EquipmentAllocations.Data.EquipmentAllocationsDbContext>(opts =>
-    opts.UseSqlite(connectionString));
+{
+    var useSqlServer = !string.IsNullOrEmpty(connectionString) && 
+                       (connectionString.Contains("Server=") || connectionString.Contains("Data Source=tcp:") || connectionString.Contains("Trusted_Connection=")) &&
+                       !string.Equals(builder.Environment.EnvironmentName, "Testing", StringComparison.OrdinalIgnoreCase);
+
+    if (useSqlServer)
+    {
+        opts.UseSqlServer(connectionString);
+    }
+    else
+    {
+        opts.UseSqlite(connectionString ?? "Data Source=Data/equipment_allocations.db");
+    }
+});
 
 // register application services
 builder.Services.AddEquipmentAllocationsServices();
@@ -24,11 +37,18 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Ensure SQLite DB is created when app starts (development/local)
+// Ensure DB is created / migrated on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<EquipmentAllocations.Data.EquipmentAllocationsDbContext>();
-    db.Database.EnsureCreated();
+    if (app.Environment.IsEnvironment("Testing"))
+    {
+        db.Database.EnsureCreated();
+    }
+    else
+    {
+        db.Database.Migrate();
+    }
 }
 
 // Configure the HTTP request pipeline.

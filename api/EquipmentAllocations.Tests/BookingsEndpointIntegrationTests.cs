@@ -32,11 +32,14 @@ namespace EquipmentAllocations.Tests
 
             var factory = _factory.WithWebHostBuilder(builder =>
             {
+                builder.UseSetting(Microsoft.AspNetCore.Hosting.WebHostDefaults.EnvironmentKey, "Testing");
                 builder.ConfigureServices(services =>
                 {
-                    // Remove existing DbContext registration
-                    var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<EquipmentAllocationsDbContext>));
-                    if (descriptor != null) services.Remove(descriptor);
+                    // Remove existing DbContext and provider registrations
+                    var descriptors = services.Where(d => d.ServiceType == typeof(DbContextOptions<EquipmentAllocationsDbContext>) || 
+                                                          d.ServiceType == typeof(DbContextOptions) ||
+                                                          d.ServiceType == typeof(EquipmentAllocationsDbContext)).ToList();
+                    foreach (var d in descriptors) services.Remove(d);
 
                     // Register SQLite in-memory with open connection
                     services.AddDbContext<EquipmentAllocationsDbContext>(options => options.UseSqlite(conn));
@@ -60,14 +63,8 @@ namespace EquipmentAllocations.Tests
 
             // Create an engineer
             var eng = new CreateEngineerDto { FullName = "Test Eng", Office = "HQ", Email = "eng@example.com" };
-            var engReq = new HttpRequestMessage(HttpMethod.Post, "/api/engineers") { Content = JsonContent.Create(eng) };
-            engReq.Headers.Add("X-Test-NoResponseBody", "1");
-            var engResp = await client.SendAsync(engReq);
-            if (!engResp.IsSuccessStatusCode)
-            {
-                var txt = await engResp.Content.ReadAsStringAsync();
-                throw new Exception($"Creating engineer failed: {engResp.StatusCode} - {txt}");
-            }
+            var engResp = await client.PostAsJsonAsync("/api/engineers", eng);
+            Assert.Equal(HttpStatusCode.Created, engResp.StatusCode);
 
             int createdEngId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
@@ -79,14 +76,8 @@ namespace EquipmentAllocations.Tests
 
             // Create a device
             var dev = new CreateDeviceDto { AssetTag = "T1", Kind = "phone", Status = "available", PurchasedOn = DateTime.UtcNow };
-            var devReq = new HttpRequestMessage(HttpMethod.Post, "/api/devices") { Content = JsonContent.Create(dev) };
-            devReq.Headers.Add("X-Test-NoResponseBody", "1");
-            var devResp = await client.SendAsync(devReq);
-            if (!devResp.IsSuccessStatusCode)
-            {
-                var txt = await devResp.Content.ReadAsStringAsync();
-                throw new Exception($"Creating device failed: {devResp.StatusCode} - {txt}");
-            }
+            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
+            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
 
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
@@ -108,21 +99,81 @@ namespace EquipmentAllocations.Tests
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
             req.Headers.Add("Idempotency-Key", "test-key-1");
-            req.Headers.Add("X-Test-NoResponseBody", "1");
 
             var resp = await client.SendAsync(req);
-            if (resp.StatusCode != HttpStatusCode.Created)
-            {
-                var txt = await resp.Content.ReadAsStringAsync();
-                throw new Exception($"Booking issue failed: {resp.StatusCode} - {txt}");
-            }
+            Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
 
-            // Verify booking exists in DB
+            // Verify booking exists in DB and device status was updated atomically to allocated
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
                 var exists = db.Bookings.Any(b => b.DeviceId == createdDevId && b.EngineerId == createdEngId);
                 Assert.True(exists, "Booking not found in DB");
+
+                var updatedDevice = db.Devices.Find(createdDevId);
+                Assert.NotNull(updatedDevice);
+                Assert.Equal("allocated", updatedDevice.Status);
             }
+
+            conn.Dispose();
+        }
+
+        [Fact]
+        public async Task IssueFlow_FullWorkingSlice_EndToEnd_SpecRoutes()
+        {
+            var factory = CreateFactoryWithSqlite(out var conn);
+            var client = factory.CreateClient();
+
+            // 1. Create Employee via spec route /api/employees
+            var eng = new CreateEngineerDto { FullName = "Spec Employee", Office = "Manila", Email = "employee@example.com" };
+            var engResp = await client.PostAsJsonAsync("/api/employees", eng);
+            Assert.Equal(HttpStatusCode.Created, engResp.StatusCode);
+
+            int createdEngId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdEngId = db.Engineers.First(e => e.Email == eng.Email).EngineerId;
+            }
+
+            // 2. Create Equipment Device via /api/devices
+            var dev = new CreateDeviceDto { AssetTag = "SPEC-101", Kind = "vr", Status = "available", PurchasedOn = DateTime.UtcNow };
+            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
+            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
+
+            int createdDevId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdDevId = db.Devices.First(d => d.AssetTag == dev.AssetTag).DeviceId;
+            }
+
+            // 3. Issue Allocation via spec route /api/allocations/issue
+            var booking = new CreateBookingDto
+            {
+                DeviceId = createdDevId,
+                EngineerId = createdEngId,
+                StartDate = DateTime.UtcNow.Date.AddDays(10),
+                EndDate = DateTime.UtcNow.Date.AddDays(12),
+                Status = "reserved"
+            };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            req.Headers.Add("Idempotency-Key", "spec-slice-key-1");
+
+            var resp = await client.SendAsync(req);
+            Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+
+            // 4. Verify retried allocation with same key returns 409 Conflict
+            var reqDup = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            reqDup.Headers.Add("Idempotency-Key", "spec-slice-key-1");
+
+            var respDup = await client.SendAsync(reqDup);
+            Assert.Equal(HttpStatusCode.Conflict, respDup.StatusCode);
+
+            // 5. Verify issuing allocation for the now-allocated device with a new key fails (400 Bad Request)
+            var reqUnavailable = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
+            reqUnavailable.Headers.Add("Idempotency-Key", "spec-slice-key-2");
+
+            var respUnavailable = await client.SendAsync(reqUnavailable);
+            Assert.Equal(HttpStatusCode.BadRequest, respUnavailable.StatusCode);
 
             conn.Dispose();
         }
@@ -135,14 +186,8 @@ namespace EquipmentAllocations.Tests
 
             // Create engineer
             var eng = new CreateEngineerDto { FullName = "T2", Office = "HQ", Email = "t2@example.com" };
-            var engReq = new HttpRequestMessage(HttpMethod.Post, "/api/engineers") { Content = JsonContent.Create(eng) };
-            engReq.Headers.Add("X-Test-NoResponseBody", "1");
-            var engResp = await client.SendAsync(engReq);
-            if (!engResp.IsSuccessStatusCode)
-            {
-                var txt = await engResp.Content.ReadAsStringAsync();
-                throw new Exception($"Creating engineer failed: {engResp.StatusCode} - {txt}");
-            }
+            var engResp = await client.PostAsJsonAsync("/api/engineers", eng);
+            Assert.Equal(HttpStatusCode.Created, engResp.StatusCode);
 
             int createdEngId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
@@ -154,14 +199,8 @@ namespace EquipmentAllocations.Tests
 
             // Create device
             var dev = new CreateDeviceDto { AssetTag = "T2", Kind = "tablet", Status = "available", PurchasedOn = DateTime.UtcNow };
-            var devReq = new HttpRequestMessage(HttpMethod.Post, "/api/devices") { Content = JsonContent.Create(dev) };
-            devReq.Headers.Add("X-Test-NoResponseBody", "1");
-            var devResp = await client.SendAsync(devReq);
-            if (!devResp.IsSuccessStatusCode)
-            {
-                var txt = await devResp.Content.ReadAsStringAsync();
-                throw new Exception($"Creating device failed: {devResp.StatusCode} - {txt}");
-            }
+            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
+            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
 
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
@@ -182,25 +221,76 @@ namespace EquipmentAllocations.Tests
 
             var req1 = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
             req1.Headers.Add("Idempotency-Key", "dup-key-1");
-            req1.Headers.Add("X-Test-NoResponseBody", "1");
+
+            var resp1 = await client.SendAsync(req1);
+            Assert.Equal(HttpStatusCode.Created, resp1.StatusCode);
 
             var req2 = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
             req2.Headers.Add("Idempotency-Key", "dup-key-1");
-            req2.Headers.Add("X-Test-NoResponseBody", "1");
 
-            var t1 = client.SendAsync(req1);
-            var t2 = client.SendAsync(req2);
-
-            var results = await Task.WhenAll(new[] { t1, t2 });
-
-            // At least one request should have created the booking
-            Assert.Contains(results, r => r.StatusCode == HttpStatusCode.Created);
+            var resp2 = await client.SendAsync(req2);
+            Assert.Equal(HttpStatusCode.Conflict, resp2.StatusCode);
 
             // Verify only one booking exists in DB for that device/engineer
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
                 var count = db.Bookings.Count(b => b.DeviceId == createdDevId && b.EngineerId == createdEngId);
                 Assert.Equal(1, count);
+            }
+
+            conn.Dispose();
+        }
+
+        [Fact]
+        public async Task IssueBooking_MidTransactionFailure_NoPartialWrite()
+        {
+            var factory = CreateFactoryWithSqlite(out var conn);
+            var client = factory.CreateClient();
+
+            // Create engineer
+            var eng = new CreateEngineerDto { FullName = "T3", Office = "HQ", Email = "t3@example.com" };
+            await client.PostAsJsonAsync("/api/engineers", eng);
+
+            int createdEngId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdEngId = db.Engineers.First(e => e.Email == eng.Email).EngineerId;
+            }
+
+            // Create device with status 'retired' (not available) to trigger failure mid-transaction
+            var dev = new CreateDeviceDto { AssetTag = "T3", Kind = "vr", Status = "retired", PurchasedOn = DateTime.UtcNow };
+            await client.PostAsJsonAsync("/api/devices", dev);
+
+            int createdDevId;
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                createdDevId = db.Devices.First(d => d.AssetTag == dev.AssetTag).DeviceId;
+            }
+
+            var booking = new CreateBookingDto
+            {
+                DeviceId = createdDevId,
+                EngineerId = createdEngId,
+                StartDate = DateTime.UtcNow.Date.AddDays(5),
+                EndDate = DateTime.UtcNow.Date.AddDays(6),
+                Status = "reserved"
+            };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
+            req.Headers.Add("Idempotency-Key", "failed-tx-key");
+
+            var resp = await client.SendAsync(req);
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+            // Assert no booking row was created and device status remains unchanged ('retired')
+            using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
+            {
+                var bookingExists = db.Bookings.Any(b => b.IdempotencyKey == "failed-tx-key");
+                Assert.False(bookingExists, "No booking should be persisted after mid-transaction failure");
+
+                var devEntity = db.Devices.Find(createdDevId);
+                Assert.NotNull(devEntity);
+                Assert.Equal("retired", devEntity.Status);
             }
 
             conn.Dispose();
