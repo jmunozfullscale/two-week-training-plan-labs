@@ -34,7 +34,7 @@ export const AllocationEditor: React.FC<AllocationEditorProps> = ({
   };
 
   return (
-    <div className="allocation-editor-card">
+    <div className="allocation-editor-container">
       <div className="card-header">
         <h2>{title}</h2>
         <span className={`status-badge ${isDirty ? 'dirty' : 'clean'}`}>
