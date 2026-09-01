@@ -41,7 +41,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<EquipmentAllocations.Data.EquipmentAllocationsDbContext>();
-    if (app.Environment.IsEnvironment("Testing"))
+    if (app.Environment.IsEnvironment("Testing") || db.Database.IsSqlite())
     {
         db.Database.EnsureCreated();
     }

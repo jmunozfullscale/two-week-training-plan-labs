@@ -5,6 +5,7 @@ import type {
   ValidationRule,
   UseAllocationEditorOptions,
 } from '../types/allocation';
+import { ValidationError } from '../types/allocation';
 
 const DEFAULT_DRAFT: AllocationDraft = {
   deviceId: 0,
@@ -198,7 +199,12 @@ export function useAllocationEditor(options: UseAllocationEditorOptions = {}) {
       return true;
     } catch (err: unknown) {
       if (isMountedRef.current && (err as Error)?.name !== 'AbortError') {
-        setError((err as Error)?.message || 'Failed to save allocation');
+        if (err instanceof ValidationError) {
+          setFieldErrors(err.fieldErrors);
+          setError(err.message || 'Validation failed');
+        } else {
+          setError((err as Error)?.message || 'Failed to save allocation');
+        }
         setLoading(false);
       }
       return false;
