@@ -51,5 +51,37 @@ namespace EquipmentAllocations.Services
                 Notes = entity.Notes
             };
         }
+
+        public EngineerDto Update(int id, UpdateEngineerDto dto)
+        {
+            var entity = _db.Engineers.Find(id);
+            if (entity == null) throw new System.Collections.Generic.KeyNotFoundException($"Engineer {id} not found");
+
+            entity.FullName = dto.FullName;
+            entity.Office = dto.Office;
+            entity.Email = dto.Email;
+            entity.Notes = dto.Notes;
+
+            _db.SaveChanges();
+
+            return new EngineerDto
+            {
+                EngineerId = entity.EngineerId,
+                FullName = entity.FullName,
+                Office = entity.Office,
+                Email = entity.Email,
+                Notes = entity.Notes
+            };
+        }
+
+        public bool Delete(int id)
+        {
+            var entity = _db.Engineers.Find(id);
+            if (entity == null) return false;
+
+            _db.Engineers.Remove(entity);
+            _db.SaveChanges();
+            return true;
+        }
     }
 }

@@ -22,11 +22,5 @@ namespace EquipmentAllocations.Controllers
             return Ok(_service.GetAll());
         }
 
-        [HttpPost]
-        public ActionResult<DeviceDto> Post([FromBody] CreateDeviceDto dto)
-        {
-            var created = _service.Create(dto);
-            return CreatedAtAction(nameof(GetAll), new { id = created.DeviceId }, created);
-        }
     }
 }

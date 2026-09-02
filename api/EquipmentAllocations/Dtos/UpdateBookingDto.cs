@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace EquipmentAllocations.Dtos
 {
-    public class CreateBookingDto : IValidatableObject
+    public class UpdateBookingDto : IValidatableObject
     {
         [Required]
         [Range(1, int.MaxValue)]
@@ -19,6 +19,9 @@ namespace EquipmentAllocations.Dtos
         [Required]
         public System.DateTime EndDate { get; set; }
 
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = string.Empty;
 
         public string? Payload { get; set; }
 

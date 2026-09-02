@@ -6,6 +6,5 @@ namespace EquipmentAllocations.Services
     public interface IDeviceService
     {
         IEnumerable<DeviceDto> GetAll();
-        DeviceDto Create(CreateDeviceDto dto);
     }
 }

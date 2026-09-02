@@ -87,6 +87,16 @@ namespace EquipmentAllocations.Tests
             return dtoCreated;
         }
 
+        public EngineerDto Update(int id, UpdateEngineerDto dto)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        public bool Delete(int id)
+        {
+            throw new System.NotImplementedException();
+        }
+
         public IEnumerable<EngineerDto> GetAll()
         {
             return _engineers;

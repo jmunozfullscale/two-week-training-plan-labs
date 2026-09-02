@@ -29,29 +29,5 @@ namespace EquipmentAllocations.Services
             }).ToList();
         }
 
-        public DeviceDto Create(CreateDeviceDto dto)
-        {
-            var entity = new Device
-            {
-                AssetTag = dto.AssetTag,
-                Kind = dto.Kind,
-                Status = dto.Status,
-                PurchasedOn = dto.PurchasedOn,
-                Notes = dto.Notes
-            };
-
-            _db.Devices.Add(entity);
-            _db.SaveChanges();
-
-            return new DeviceDto
-            {
-                DeviceId = entity.DeviceId,
-                AssetTag = entity.AssetTag,
-                Kind = entity.Kind,
-                Status = entity.Status,
-                PurchasedOn = entity.PurchasedOn,
-                Notes = entity.Notes
-            };
-        }
     }
 }

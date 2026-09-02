@@ -42,7 +42,6 @@ namespace EquipmentAllocations.Tests
                     EngineerId = 1,
                     StartDate = DateTime.UtcNow.Date.AddDays(1),
                     EndDate = DateTime.UtcNow.Date.AddDays(2),
-                    Status = "reserved",
                     Payload = "{}"
                 };
 
