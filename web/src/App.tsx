@@ -3,11 +3,16 @@ import { Provider } from 'react-redux';
 import { store } from './store/store';
 import { AllocationEditor } from './components/AllocationEditor';
 import { AllocationsGrid } from './components/AllocationsGrid/AllocationsGrid';
+import { LiveAllocationEditor } from './components/LiveAllocationEditor';
+import { AddEngineer } from './components/AddEngineer';
+import { AddDevice } from './components/AddDevice';
 import type { AllocationDraft } from './types/allocation';
 import './App.css';
 
+type Tab = 'grid' | 'editor' | 'live-editor' | 'add-engineer' | 'add-device';
+
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'grid'>('grid');
+  const [activeTab, setActiveTab] = useState<Tab>('grid');
   const [savedRecords, setSavedRecords] = useState<AllocationDraft[]>([]);
 
   const handleSave = async (draft: AllocationDraft) => {
@@ -22,6 +27,13 @@ function AppContent() {
         <nav className="nav-tabs">
           <button
             type="button"
+            className={`nav-tab ${activeTab === 'editor' ? 'active' : ''}`}
+            onClick={() => setActiveTab('editor')}
+          >
+            Day 6: Allocation Editor
+          </button>
+          <button
+            type="button"
             className={`nav-tab ${activeTab === 'grid' ? 'active' : ''}`}
             onClick={() => setActiveTab('grid')}
           >
@@ -29,19 +41,33 @@ function AppContent() {
           </button>
           <button
             type="button"
-            className={`nav-tab ${activeTab === 'editor' ? 'active' : ''}`}
-            onClick={() => setActiveTab('editor')}
+            className={`nav-tab ${activeTab === 'live-editor' ? 'active' : ''}`}
+            onClick={() => setActiveTab('live-editor')}
           >
-            Day 6: Allocation Editor
+            Day 8: Live Allocation
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${activeTab === 'add-engineer' ? 'active' : ''}`}
+            onClick={() => setActiveTab('add-engineer')}
+          >
+            Extra: Add Engineer
+          </button>
+          <button
+            type="button"
+            className={`nav-tab ${activeTab === 'add-device' ? 'active' : ''}`}
+            onClick={() => setActiveTab('add-device')}
+          >
+            Extra: Add Device
           </button>
         </nav>
         <div className="right">Juan Carlos Munoz</div>
       </header>
 
       <main className="app-main">
-        {activeTab === 'grid' ? (
-          <AllocationsGrid />
-        ) : (
+        {activeTab === 'grid' && <AllocationsGrid />}
+        
+        {activeTab === 'editor' && (
           <div className="editor-tab-wrapper">
             <AllocationEditor
               title="Equipment Booking / Allocation Editor"
@@ -62,6 +88,24 @@ function AppContent() {
                 <pre>{JSON.stringify(savedRecords, null, 2)}</pre>
               </section>
             )}
+          </div>
+        )}
+
+        {activeTab === 'live-editor' && (
+          <div className="editor-tab-wrapper">
+            <LiveAllocationEditor />
+          </div>
+        )}
+
+        {activeTab === 'add-engineer' && (
+          <div className="editor-tab-wrapper">
+            <AddEngineer />
+          </div>
+        )}
+
+        {activeTab === 'add-device' && (
+          <div className="editor-tab-wrapper">
+            <AddDevice />
           </div>
         )}
       </main>

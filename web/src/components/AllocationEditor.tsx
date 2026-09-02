@@ -3,14 +3,23 @@ import { useAllocationEditor } from '../hooks/useAllocationEditor';
 import type { UseAllocationEditorOptions } from '../types/allocation';
 import './AllocationEditor.css';
 
+export interface SelectOption {
+  value: number;
+  label: string;
+}
+
 export interface AllocationEditorProps extends UseAllocationEditorOptions {
   title?: string;
   onSuccess?: () => void;
+  deviceOptions?: SelectOption[];
+  engineerOptions?: SelectOption[];
 }
 
 export const AllocationEditor: React.FC<AllocationEditorProps> = ({
   title = 'Equipment Allocation Editor',
   onSuccess,
+  deviceOptions,
+  engineerOptions,
   ...hookOptions
 }) => {
   const {
@@ -51,35 +60,67 @@ export const AllocationEditor: React.FC<AllocationEditorProps> = ({
 
       <form onSubmit={handleSubmit} noValidate className="editor-form">
         <div className="form-grid">
-          {/* Device ID */}
+          {/* Device ID / Device Selection */}
           <div className={`form-group ${fieldErrors.deviceId ? 'has-error' : ''}`}>
-            <label htmlFor="deviceId">Device ID</label>
-            <input
-              id="deviceId"
-              type="number"
-              min="1"
-              value={draft.deviceId || ''}
-              onChange={(e) => updateField('deviceId', parseInt(e.target.value, 10) || 0)}
-              disabled={loading}
-              placeholder="e.g. 101"
-            />
+            <label htmlFor="deviceId">Device</label>
+            {deviceOptions ? (
+              <select
+                id="deviceId"
+                value={draft.deviceId || ''}
+                onChange={(e) => updateField('deviceId', parseInt(e.target.value, 10) || 0)}
+                disabled={loading}
+              >
+                <option value="">Select a device...</option>
+                {deviceOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="deviceId"
+                type="number"
+                min="1"
+                value={draft.deviceId || ''}
+                onChange={(e) => updateField('deviceId', parseInt(e.target.value, 10) || 0)}
+                disabled={loading}
+                placeholder="e.g. 101"
+              />
+            )}
             {fieldErrors.deviceId && (
               <span className="field-error">{fieldErrors.deviceId}</span>
             )}
           </div>
 
-          {/* Engineer ID */}
+          {/* Engineer ID / Engineer Selection */}
           <div className={`form-group ${fieldErrors.engineerId ? 'has-error' : ''}`}>
-            <label htmlFor="engineerId">Engineer ID</label>
-            <input
-              id="engineerId"
-              type="number"
-              min="1"
-              value={draft.engineerId || ''}
-              onChange={(e) => updateField('engineerId', parseInt(e.target.value, 10) || 0)}
-              disabled={loading}
-              placeholder="e.g. 42"
-            />
+            <label htmlFor="engineerId">Engineer</label>
+            {engineerOptions ? (
+              <select
+                id="engineerId"
+                value={draft.engineerId || ''}
+                onChange={(e) => updateField('engineerId', parseInt(e.target.value, 10) || 0)}
+                disabled={loading}
+              >
+                <option value="">Select an engineer...</option>
+                {engineerOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="engineerId"
+                type="number"
+                min="1"
+                value={draft.engineerId || ''}
+                onChange={(e) => updateField('engineerId', parseInt(e.target.value, 10) || 0)}
+                disabled={loading}
+                placeholder="e.g. 42"
+              />
+            )}
             {fieldErrors.engineerId && (
               <span className="field-error">{fieldErrors.engineerId}</span>
             )}
