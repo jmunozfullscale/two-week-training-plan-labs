@@ -1,9 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest';
 import { LiveAllocationEditor } from '../components/LiveAllocationEditor';
 
 describe('LiveAllocationEditor E2E Integration Flow', () => {
-  let fetchMock: any;
+  let fetchMock: Mock;
 
   beforeEach(() => {
     fetchMock = vi.fn();
@@ -51,10 +51,10 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      const issueCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/issue');
+      const issueCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/issue') as [string, RequestInit] | undefined;
       expect(issueCall).toBeTruthy();
-      expect(issueCall[1].method).toBe('POST');
-      expect(issueCall[1].headers['Idempotency-Key']).toBeTruthy();
+      expect(issueCall![1].method).toBe('POST');
+      expect((issueCall![1].headers as Record<string, string>)['Idempotency-Key']).toBeTruthy();
     });
   });
 
@@ -62,7 +62,7 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     let capturedIdempotencyKey = '';
     let issueCalls = 0;
 
-    fetchMock.mockImplementation(async (url: string, options?: any) => {
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
       if (url === '/api/devices' || url === '/api/employees' || url === '/api/allocations') {
         return { ok: true, json: async () => [] };
       }
@@ -70,11 +70,11 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
       if (url === '/api/allocations/issue') {
         issueCalls++;
         if (issueCalls === 1) {
-          capturedIdempotencyKey = options.headers['Idempotency-Key'];
+          capturedIdempotencyKey = (options?.headers as Record<string, string>)['Idempotency-Key'] || '';
           return { ok: false, status: 500, statusText: 'Internal Server Error' };
         }
         if (issueCalls === 2) {
-          if (options.headers['Idempotency-Key'] === capturedIdempotencyKey) {
+          if ((options?.headers as Record<string, string>)['Idempotency-Key'] === capturedIdempotencyKey) {
             return {
               ok: false,
               status: 409,
@@ -109,9 +109,9 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      const issueCallsList = fetchMock.mock.calls.filter((call: any[]) => call[0] === '/api/allocations/issue');
+      const issueCallsList = fetchMock.mock.calls.filter((call: unknown[]) => call[0] === '/api/allocations/issue') as [string, RequestInit][];
       expect(issueCallsList.length).toBe(2);
-      expect(issueCallsList[0][1].headers['Idempotency-Key']).toBe(issueCallsList[1][1].headers['Idempotency-Key']);
+      expect((issueCallsList[0]![1].headers as Record<string, string>)['Idempotency-Key']).toBe((issueCallsList[1]![1].headers as Record<string, string>)['Idempotency-Key']);
     });
 
     // Verify UI catches the 409 conflict and shows the error
@@ -222,10 +222,10 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(updateBtn);
 
     await waitFor(() => {
-      const putCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/42');
+      const putCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/42') as [string, RequestInit] | undefined;
       expect(putCall).toBeTruthy();
-      expect(putCall[1].method).toBe('PUT');
-      const body = JSON.parse(putCall[1].body);
+      expect(putCall![1].method).toBe('PUT');
+      const body = JSON.parse(putCall![1].body as string);
       expect(body.status).toBe('Completed');
       expect(body.payload).toBe('Updated via edit modal');
     });
@@ -271,9 +271,9 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete allocation #99?');
 
     await waitFor(() => {
-      const deleteCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/99');
+      const deleteCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/99') as [string, RequestInit] | undefined;
       expect(deleteCall).toBeTruthy();
-      expect(deleteCall[1].method).toBe('DELETE');
+      expect(deleteCall![1].method).toBe('DELETE');
     });
   });
 });

@@ -15,8 +15,8 @@ describe('Day 7: Performance Grid & Redux Toolkit', () => {
   it('generates 5,000 mock allocation records', () => {
     const items = generateMockAllocations(5000);
     expect(items).toHaveLength(5000);
-    expect(items[0].deviceName).toContain('#1');
-    expect(items[4999].deviceName).toContain('#5000');
+    expect(items[0]?.deviceName).toContain('#1');
+    expect(items[4999]?.deviceName).toContain('#5000');
   });
 
   describe('RTK Selectors & Memoization', () => {
