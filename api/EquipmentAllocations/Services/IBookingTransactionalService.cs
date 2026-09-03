@@ -6,5 +6,6 @@ namespace EquipmentAllocations.Services
     public interface IBookingTransactionalService
     {
         Task<BookingDto> IssueBookingAsync(CreateBookingDto dto, string? idempotencyKey);
+        Task<BookingDto> UpdateBookingAsync(long id, UpdateBookingDto dto);
     }
 }

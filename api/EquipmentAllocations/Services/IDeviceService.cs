@@ -7,5 +7,7 @@ namespace EquipmentAllocations.Services
     {
         IEnumerable<DeviceDto> GetAll();
         DeviceDto Create(CreateDeviceDto dto);
+        DeviceDto Update(int id, UpdateDeviceDto dto);
+        bool Delete(int id);
     }
 }

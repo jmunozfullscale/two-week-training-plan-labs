@@ -9,7 +9,6 @@ describe('useAllocationEditor Custom Hook', () => {
     engineerId: 10,
     startDate: '2026-09-01T09:00',
     endDate: '2026-09-05T17:00',
-    status: 'Approved',
     payload: 'Testing note',
   };
 
@@ -70,8 +69,7 @@ describe('useAllocationEditor Custom Hook', () => {
       deviceId: 0,
       engineerId: -1,
       startDate: '2026-09-10T09:00',
-      endDate: '2026-09-01T09:00', // EndDate BEFORE StartDate!
-      status: '',
+      endDate: '2026-09-01T09:00',
     };
 
     const onSave = vi.fn();
@@ -87,7 +85,6 @@ describe('useAllocationEditor Custom Hook', () => {
     expect(result.current.fieldErrors.deviceId).toBe('Device ID must be greater than 0.');
     expect(result.current.fieldErrors.engineerId).toBe('Engineer ID must be greater than 0.');
     expect(result.current.fieldErrors.endDate).toBe('End date must be strictly after start date.');
-    expect(result.current.fieldErrors.status).toBe('Status is required.');
 
     let saveSuccess = false;
     await act(async () => {

@@ -59,5 +59,36 @@ export function useEngineers() {
     await fetchEngineers();
   };
 
-  return { engineers, loading, error, refetch: fetchEngineers, createEngineer };
+  const updateEngineer = async (id: number, engineerData: Omit<EngineerItem, 'engineerId'>) => {
+    const res = await fetch(`/api/employees/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(engineerData),
+    });
+
+    if (!res.ok) {
+      let msg = `Server returned ${res.status}`;
+      try {
+        const problem = await res.json();
+        msg = problem.message || problem.title || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    await fetchEngineers();
+  };
+
+  const deleteEngineer = async (id: number) => {
+    const res = await fetch(`/api/employees/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}`);
+    }
+
+    await fetchEngineers();
+  };
+
+  return { engineers, loading, error, refetch: fetchEngineers, createEngineer, updateEngineer, deleteEngineer };
 }

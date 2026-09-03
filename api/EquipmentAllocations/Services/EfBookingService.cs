@@ -31,33 +31,14 @@ namespace EquipmentAllocations.Services
             }).ToList();
         }
 
-        public BookingDto Create(CreateBookingDto dto)
+        public bool Delete(long id)
         {
-            var entity = new Booking
-            {
-                DeviceId = dto.DeviceId,
-                EngineerId = dto.EngineerId,
-                StartDate = dto.StartDate,
-                EndDate = dto.EndDate,
-                Status = dto.Status,
-                Payload = dto.Payload,
-                CreatedOn = System.DateTime.UtcNow
-            };
+            var entity = _db.Bookings.Find(id);
+            if (entity == null) return false;
 
-            _db.Bookings.Add(entity);
+            _db.Bookings.Remove(entity);
             _db.SaveChanges();
-
-            return new BookingDto
-            {
-                BookingId = entity.BookingId,
-                DeviceId = entity.DeviceId,
-                EngineerId = entity.EngineerId,
-                StartDate = entity.StartDate,
-                EndDate = entity.EndDate,
-                Status = entity.Status,
-                CreatedOn = entity.CreatedOn,
-                Payload = entity.Payload
-            };
+            return true;
         }
     }
 }

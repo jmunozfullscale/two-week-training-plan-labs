@@ -21,11 +21,11 @@ export function AllocationRow({ item }: AllocationRowProps) {
 
   const getStatusBadgeClass = (status: AllocationGridItem['status']) => {
     switch (status) {
-      case 'Allocated':
+      case 'Confirmed':
         return 'badge status-active';
-      case 'Pending':
-        return 'badge status-pending';
-      case 'Returned':
+      case 'Completed':
+        return 'badge status-completed';
+      case 'Cancelled':
         return 'badge status-maintenance';
       default:
         return 'badge status-completed';

@@ -46,12 +46,9 @@ namespace EquipmentAllocations.Services
                 var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
                 if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
 
-                // Check overlapping booking for same device
-                var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
+                // Check overlapping booking for same device (ignore cancelled bookings)
+                var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.Status.ToLower() != "cancelled" && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
                 if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
-
-                // Atomic state transition: allocate device
-                device.Status = "allocated";
 
                 var entity = new Booking
                 {
@@ -59,7 +56,7 @@ namespace EquipmentAllocations.Services
                     EngineerId = dto.EngineerId,
                     StartDate = dto.StartDate,
                     EndDate = dto.EndDate,
-                    Status = dto.Status,
+                    Status = "Confirmed",
                     Payload = dto.Payload,
                     CreatedOn = DateTime.UtcNow,
                     IdempotencyKey = idempotencyKey
@@ -84,6 +81,60 @@ namespace EquipmentAllocations.Services
                     throw;
                 }
 
+                await tx.CommitAsync();
+
+                return new BookingDto
+                {
+                    BookingId = entity.BookingId,
+                    DeviceId = entity.DeviceId,
+                    EngineerId = entity.EngineerId,
+                    StartDate = entity.StartDate,
+                    EndDate = entity.EndDate,
+                    Status = entity.Status,
+                    CreatedOn = entity.CreatedOn,
+                    Payload = entity.Payload
+                };
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+        public async Task<BookingDto> UpdateBookingAsync(long id, UpdateBookingDto dto)
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+
+            try
+            {
+                var entity = await _db.Bookings.FindAsync(id);
+                if (entity == null) throw new System.Collections.Generic.KeyNotFoundException($"Booking {id} not found");
+
+                var device = await _db.Devices.FindAsync(dto.DeviceId);
+                if (device == null) throw new InvalidOperationException($"Device {dto.DeviceId} not found");
+                if (entity.DeviceId != dto.DeviceId && !string.Equals(device.Status, "available", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Device {dto.DeviceId} is not available for allocation (current status: '{device.Status}')");
+                }
+
+                var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
+                if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
+
+                if (!string.Equals(dto.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+                {
+                    var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.BookingId != id && b.Status.ToLower() != "cancelled" && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
+                    if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
+                }
+
+                entity.DeviceId = dto.DeviceId;
+                entity.EngineerId = dto.EngineerId;
+                entity.StartDate = dto.StartDate;
+                entity.EndDate = dto.EndDate;
+                entity.Status = dto.Status;
+                entity.Payload = dto.Payload;
+
+                await _db.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 return new BookingDto

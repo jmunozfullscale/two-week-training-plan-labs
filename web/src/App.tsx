@@ -51,14 +51,14 @@ function AppContent() {
             className={`nav-tab ${activeTab === 'add-engineer' ? 'active' : ''}`}
             onClick={() => setActiveTab('add-engineer')}
           >
-            Extra: Add Engineer
+            Engineers
           </button>
           <button
             type="button"
             className={`nav-tab ${activeTab === 'add-device' ? 'active' : ''}`}
             onClick={() => setActiveTab('add-device')}
           >
-            Extra: Add Device
+            Devices
           </button>
         </nav>
         <div className="right">Juan Carlos Munoz</div>
@@ -76,7 +76,6 @@ function AppContent() {
                 engineerId: 1,
                 startDate: '2026-09-01T09:00',
                 endDate: '2026-09-05T17:00',
-                status: 'Pending',
                 payload: 'Initial booking request for field testing.',
               }}
               onSave={handleSave}

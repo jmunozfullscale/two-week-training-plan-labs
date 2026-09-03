@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ValidationError } from '../types/allocation';
 
 export interface AllocationItem {
   bookingId: number;
@@ -69,18 +68,12 @@ export function useAllocations() {
 
       if (res.status === 400) {
         const problem = await res.json();
+        let msg = problem.message || problem.title || 'Validation errors occurred.';
         if (problem.errors) {
-          const apiFieldErrors: Record<string, string> = {};
-          for (const key in problem.errors) {
-            const cleanKey = key.replace(/^(\$\.|dto\.)/, '');
-            const camelKey = cleanKey.charAt(0).toLowerCase() + cleanKey.slice(1);
-            apiFieldErrors[camelKey] = problem.errors[key].join(' ');
-          }
-          // Throw the generic object matching the structure we expect;
-          // ValidationError class will be handled correctly by the caller.
-          throw new ValidationError(problem.title || 'Validation errors occurred.', apiFieldErrors);
+          const detailMsgs = Object.values(problem.errors).flat().join(' ');
+          msg = `${msg} ${detailMsgs}`;
         }
-        throw new Error(problem.message || 'Bad Request');
+        throw new Error(msg);
       }
 
       throw new Error(`Server returned ${res.status} ${res.statusText}`);
@@ -89,5 +82,82 @@ export function useAllocations() {
     await fetchAllocations();
   };
 
-  return { allocations, loading, error, refetch: fetchAllocations, issueAllocation };
+  const createAllocation = async (
+    draft: {
+      deviceId: number;
+      engineerId: number;
+      startDate: string;
+      endDate: string;
+      payload?: string;
+    },
+    idempotencyKey?: string,
+    signal?: AbortSignal
+  ) => {
+    return issueAllocation(draft, idempotencyKey || crypto.randomUUID(), signal);
+  };
+
+  const updateAllocation = async (
+    id: number,
+    data: {
+      deviceId: number;
+      engineerId: number;
+      startDate: string;
+      endDate: string;
+      status: string;
+      payload?: string;
+    }
+  ) => {
+    const res = await fetch(`/api/allocations/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      let msg = `Server returned ${res.status}`;
+      try {
+        const problem = await res.json();
+        if (problem.errors) {
+          const messages = Object.values(problem.errors).flat().join(' ');
+          msg = messages || problem.title || msg;
+        } else {
+          msg = problem.message || problem.title || msg;
+        }
+      } catch {}
+      throw new Error(msg);
+    }
+
+    await fetchAllocations();
+  };
+
+  const deleteAllocation = async (id: number) => {
+    const res = await fetch(`/api/allocations/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      let msg = `Server returned ${res.status}`;
+      try {
+        const problem = await res.json();
+        msg = problem.message || problem.title || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    await fetchAllocations();
+  };
+
+  return {
+    allocations,
+    loading,
+    error,
+    refetch: fetchAllocations,
+    issueAllocation,
+    createAllocation,
+    updateAllocation,
+    deleteAllocation,
+  };
 }
+

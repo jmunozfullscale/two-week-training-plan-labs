@@ -75,16 +75,13 @@ namespace EquipmentAllocations.Tests
             }
 
             // Create a device
-            var dev = new CreateDeviceDto { AssetTag = "T1", Kind = "phone", Status = "available", PurchasedOn = DateTime.UtcNow };
-            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
-            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
-
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
-                var createdDevEntity = db.Devices.FirstOrDefault(d => d.AssetTag == dev.AssetTag);
-                if (createdDevEntity == null) throw new Exception("Created device not found in DB");
-                createdDevId = createdDevEntity.DeviceId;
+                var newDev = new EquipmentAllocations.Entities.Device { AssetTag = "T1", Kind = "phone", Status = "Available", PurchasedOn = DateTime.UtcNow };
+                db.Devices.Add(newDev);
+                db.SaveChanges();
+                createdDevId = newDev.DeviceId;
             }
 
             // Issue booking
@@ -93,8 +90,7 @@ namespace EquipmentAllocations.Tests
                 DeviceId = createdDevId,
                 EngineerId = createdEngId,
                 StartDate = DateTime.UtcNow.Date.AddDays(1),
-                EndDate = DateTime.UtcNow.Date.AddDays(2),
-                Status = "reserved"
+                EndDate = DateTime.UtcNow.Date.AddDays(2)
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
@@ -103,7 +99,7 @@ namespace EquipmentAllocations.Tests
             var resp = await client.SendAsync(req);
             Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
 
-            // Verify booking exists in DB and device status was updated atomically to allocated
+            // Verify booking exists in DB and device status was NOT changed
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
                 var exists = db.Bookings.Any(b => b.DeviceId == createdDevId && b.EngineerId == createdEngId);
@@ -111,7 +107,7 @@ namespace EquipmentAllocations.Tests
 
                 var updatedDevice = db.Devices.Find(createdDevId);
                 Assert.NotNull(updatedDevice);
-                Assert.Equal("allocated", updatedDevice.Status);
+                Assert.Equal("Available", updatedDevice.Status); // Status should remain unchanged
             }
 
             conn.Dispose();
@@ -134,15 +130,14 @@ namespace EquipmentAllocations.Tests
                 createdEngId = db.Engineers.First(e => e.Email == eng.Email).EngineerId;
             }
 
-            // 2. Create Equipment Device via /api/devices
-            var dev = new CreateDeviceDto { AssetTag = "SPEC-101", Kind = "vr", Status = "available", PurchasedOn = DateTime.UtcNow };
-            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
-            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
-
+            // 2. Create Equipment Device directly in DB
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
-                createdDevId = db.Devices.First(d => d.AssetTag == dev.AssetTag).DeviceId;
+                var newDev = new EquipmentAllocations.Entities.Device { AssetTag = "SPEC-101", Kind = "vr", Status = "Available", PurchasedOn = DateTime.UtcNow };
+                db.Devices.Add(newDev);
+                db.SaveChanges();
+                createdDevId = newDev.DeviceId;
             }
 
             // 3. Issue Allocation via spec route /api/allocations/issue
@@ -151,8 +146,7 @@ namespace EquipmentAllocations.Tests
                 DeviceId = createdDevId,
                 EngineerId = createdEngId,
                 StartDate = DateTime.UtcNow.Date.AddDays(10),
-                EndDate = DateTime.UtcNow.Date.AddDays(12),
-                Status = "reserved"
+                EndDate = DateTime.UtcNow.Date.AddDays(12)
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/allocations/issue") { Content = JsonContent.Create(booking) };
@@ -198,16 +192,13 @@ namespace EquipmentAllocations.Tests
             }
 
             // Create device
-            var dev = new CreateDeviceDto { AssetTag = "T2", Kind = "tablet", Status = "available", PurchasedOn = DateTime.UtcNow };
-            var devResp = await client.PostAsJsonAsync("/api/devices", dev);
-            Assert.Equal(HttpStatusCode.Created, devResp.StatusCode);
-
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
-                var createdDev = db.Devices.FirstOrDefault(d => d.AssetTag == dev.AssetTag);
-                if (createdDev == null) throw new Exception("Created device not found in DB");
-                createdDevId = createdDev.DeviceId;
+                var newDev = new EquipmentAllocations.Entities.Device { AssetTag = "T2", Kind = "tablet", Status = "Available", PurchasedOn = DateTime.UtcNow };
+                db.Devices.Add(newDev);
+                db.SaveChanges();
+                createdDevId = newDev.DeviceId;
             }
 
             var booking = new CreateBookingDto
@@ -215,8 +206,7 @@ namespace EquipmentAllocations.Tests
                 DeviceId = createdDevId,
                 EngineerId = createdEngId,
                 StartDate = DateTime.UtcNow.Date.AddDays(3),
-                EndDate = DateTime.UtcNow.Date.AddDays(4),
-                Status = "reserved"
+                EndDate = DateTime.UtcNow.Date.AddDays(4)
             };
 
             var req1 = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
@@ -257,14 +247,14 @@ namespace EquipmentAllocations.Tests
                 createdEngId = db.Engineers.First(e => e.Email == eng.Email).EngineerId;
             }
 
-            // Create device with status 'retired' (not available) to trigger failure mid-transaction
-            var dev = new CreateDeviceDto { AssetTag = "T3", Kind = "vr", Status = "retired", PurchasedOn = DateTime.UtcNow };
-            await client.PostAsJsonAsync("/api/devices", dev);
-
+            // Create device with status 'Unavailable' to trigger failure
             int createdDevId;
             using (var db = new EquipmentAllocationsDbContext(new DbContextOptionsBuilder<EquipmentAllocationsDbContext>().UseSqlite(conn).Options))
             {
-                createdDevId = db.Devices.First(d => d.AssetTag == dev.AssetTag).DeviceId;
+                var newDev = new EquipmentAllocations.Entities.Device { AssetTag = "T3", Kind = "vr", Status = "Unavailable", PurchasedOn = DateTime.UtcNow };
+                db.Devices.Add(newDev);
+                db.SaveChanges();
+                createdDevId = newDev.DeviceId;
             }
 
             var booking = new CreateBookingDto
@@ -272,8 +262,7 @@ namespace EquipmentAllocations.Tests
                 DeviceId = createdDevId,
                 EngineerId = createdEngId,
                 StartDate = DateTime.UtcNow.Date.AddDays(5),
-                EndDate = DateTime.UtcNow.Date.AddDays(6),
-                Status = "reserved"
+                EndDate = DateTime.UtcNow.Date.AddDays(6)
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/bookings/issue") { Content = JsonContent.Create(booking) };
@@ -290,7 +279,7 @@ namespace EquipmentAllocations.Tests
 
                 var devEntity = db.Devices.Find(createdDevId);
                 Assert.NotNull(devEntity);
-                Assert.Equal("retired", devEntity.Status);
+                Assert.Equal("Unavailable", devEntity.Status);
             }
 
             conn.Dispose();

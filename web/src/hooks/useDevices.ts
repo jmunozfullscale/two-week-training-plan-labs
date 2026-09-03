@@ -60,5 +60,36 @@ export function useDevices() {
     await fetchDevices();
   };
 
-  return { devices, loading, error, refetch: fetchDevices, createDevice };
+  const updateDevice = async (id: number, deviceData: Omit<DeviceItem, 'deviceId'>) => {
+    const res = await fetch(`/api/devices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deviceData),
+    });
+
+    if (!res.ok) {
+      let msg = `Server returned ${res.status}`;
+      try {
+        const problem = await res.json();
+        msg = problem.message || problem.title || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    await fetchDevices();
+  };
+
+  const deleteDevice = async (id: number) => {
+    const res = await fetch(`/api/devices/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}`);
+    }
+
+    await fetchDevices();
+  };
+
+  return { devices, loading, error, refetch: fetchDevices, createDevice, updateDevice, deleteDevice };
 }

@@ -28,11 +28,30 @@ namespace EquipmentAllocations.Controllers
             return Ok(_service.GetAll());
         }
 
-        [HttpPost]
-        public ActionResult<BookingDto> Post([FromBody] CreateBookingDto dto)
+        [HttpPut("{id}")]
+        public async Task<ActionResult<BookingDto>> Put(long id, [FromBody] UpdateBookingDto dto)
         {
-            var created = _service.Create(dto);
-            return CreatedAtAction(nameof(GetAll), new { id = created.BookingId }, created);
+            try
+            {
+                var updated = await _transactionalService.UpdateBookingAsync(id, dto);
+                return Ok(updated);
+            }
+            catch (System.Collections.Generic.KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{id}")]
+        public ActionResult Delete(long id)
+        {
+            var success = _service.Delete(id);
+            if (!success) return NotFound();
+            return NoContent();
         }
 
         [HttpPost("issue")]

@@ -6,7 +6,7 @@ export interface AllocationGridItem {
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   startDate: string;
   endDate: string;
-  status: 'Pending' | 'Available' | 'Returned' | 'Allocated';
+  status: 'Confirmed' | 'Completed' | 'Cancelled';
   notes: string;
 }
 
@@ -42,9 +42,9 @@ const LOCATIONS = [
 ];
 
 const PRIORITIES: AllocationGridItem['priority'][] = ['Low', 'Medium', 'High', 'Critical'];
-const STATUSES: AllocationGridItem['status'][] = ['Pending', 'Available', 'Returned', 'Allocated'];
+const STATUSES: AllocationGridItem['status'][] = ['Confirmed', 'Completed', 'Cancelled'];
 
-export function generateMockAllocations(count: number = 5000): AllocationGridItem[] {
+export function generateMockAllocations(count: number): AllocationGridItem[] {
   const items: AllocationGridItem[] = [];
 
   for (let i = 1; i <= count; i++) {
