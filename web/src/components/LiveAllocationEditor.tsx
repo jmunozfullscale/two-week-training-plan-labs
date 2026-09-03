@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { useAllocations } from '../hooks/useAllocations';
-import type { AllocationItem } from '../hooks/useAllocations';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
+import { useAllocations } from '../hooks/useAllocations.ts';
+import type { AllocationItem } from '../hooks/useAllocations.ts';
 import { useDevices } from '../hooks/useDevices';
-import { useEngineers } from '../hooks/useEngineers';
+import { useEngineers } from '../hooks/useEngineers.ts';
+import { useVirtualScroll } from '../hooks/useVirtualScroll.ts';
 import { Modal } from './Modal';
 import './AllocationEditor.css';
 
@@ -25,16 +26,18 @@ export const LiveAllocationEditor: React.FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  
+  const [filterText, setFilterText] = useState('');
 
-  const getDeviceLabel = (id: number) => {
+  const getDeviceLabel = useCallback((id: number) => {
     const dev = devices.find((d) => d.deviceId === id);
     return dev ? `${dev.kind} - ${dev.assetTag}` : `Device #${id}`;
-  };
+  }, [devices]);
 
-  const getEngineerLabel = (id: number) => {
+  const getEngineerLabel = useCallback((id: number) => {
     const eng = engineers.find((e) => e.engineerId === id);
     return eng ? eng.fullName : `Engineer #${id}`;
-  };
+  }, [engineers]);
 
   const formatForInput = (val?: string) => {
     if (!val) return '';
@@ -47,6 +50,39 @@ export const LiveAllocationEditor: React.FC = () => {
       return '';
     }
   };
+
+  const filteredAllocations = useMemo(() => {
+    const query = filterText.trim().toLowerCase();
+    if (!query) return allocations;
+
+    return allocations.filter((alloc) => {
+      const deviceStr = getDeviceLabel(alloc.deviceId).toLowerCase();
+      const engStr = getEngineerLabel(alloc.engineerId).toLowerCase();
+      const statusStr = (alloc.status || '').toLowerCase();
+      const payloadStr = (alloc.payload || '').toLowerCase();
+      const idStr = alloc.bookingId.toString();
+
+      return (
+        deviceStr.includes(query) ||
+        engStr.includes(query) ||
+        statusStr.includes(query) ||
+        payloadStr.includes(query) ||
+        idStr.includes(query)
+      );
+    });
+  }, [allocations, filterText, getDeviceLabel, getEngineerLabel]);
+
+  const ROW_HEIGHT = 46;
+  const CONTAINER_HEIGHT = 500;
+
+  const { startIndex, endIndex, topPadding, bottomPadding, handleScroll } = useVirtualScroll({
+    totalItems: filteredAllocations.length,
+    rowHeight: ROW_HEIGHT,
+    containerHeight: CONTAINER_HEIGHT,
+    overscan: 6,
+  });
+
+  const visibleItems = filteredAllocations.slice(startIndex, endIndex);
 
   const openAddModal = () => {
     setEditingId(null);
@@ -76,10 +112,9 @@ export const LiveAllocationEditor: React.FC = () => {
 
   const handleDelete = async (alloc: AllocationItem) => {
     if (!window.confirm(`Are you sure you want to delete allocation #${alloc.bookingId}?`)) return;
-    try {
-      await deleteAllocation(alloc.bookingId);
-    } catch (err: unknown) {
-      alert((err as Error).message);
+    const result = await deleteAllocation(alloc.bookingId);
+    if (!result.success) {
+      alert(result.error);
     }
   };
 
@@ -91,37 +126,39 @@ export const LiveAllocationEditor: React.FC = () => {
     const activeDeviceId = Number(deviceId) || devices[0]?.deviceId || 1;
     const activeEngineerId = Number(engineerId) || engineers[0]?.engineerId || 1;
 
-    try {
-      if (editingId) {
-        await updateAllocation(editingId, {
+    let result;
+    if (editingId) {
+      result = await updateAllocation(editingId, {
+        deviceId: activeDeviceId,
+        engineerId: activeEngineerId,
+        startDate,
+        endDate,
+        status,
+        payload,
+      });
+    } else {
+      result = await issueAllocation(
+        {
           deviceId: activeDeviceId,
           engineerId: activeEngineerId,
           startDate,
           endDate,
           status,
           payload,
-        });
-      } else {
-        await issueAllocation(
-          {
-            deviceId: activeDeviceId,
-            engineerId: activeEngineerId,
-            startDate,
-            endDate,
-            status,
-            payload,
-          },
-          idempotencyKeyRef.current
-        );
-        // rotate idempotency key on successful creation
+        },
+        idempotencyKeyRef.current
+      );
+    }
+
+    if (result.success) {
+      if (!editingId) {
         idempotencyKeyRef.current = crypto.randomUUID();
       }
       setIsModalOpen(false);
-    } catch (err: unknown) {
-      setSaveError((err as Error).message);
-    } finally {
-      setSaving(false);
+    } else {
+      setSaveError(result.error);
     }
+    setSaving(false);
   };
 
   return (
@@ -138,8 +175,36 @@ export const LiveAllocationEditor: React.FC = () => {
         </button>
       </div>
 
-      <div className="table-responsive">
-        <table className="clean-table">
+      <div className="toolbar" style={{ marginBottom: '1rem', padding: '0 1rem' }}>
+        <div className="search-box" style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+          <span className="search-icon" style={{ position: 'absolute', left: '10px' }}>🔍</span>
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Filter allocations by device, engineer, status..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            style={{ width: '100%', padding: '0.5rem 0.5rem 0.5rem 2rem', borderRadius: '4px', border: '1px solid #ccc' }}
+          />
+          {filterText && (
+            <button
+              type="button"
+              className="clear-btn"
+              onClick={() => setFilterText('')}
+              style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}
+            >
+              &times;
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div 
+        className="table-scroll-container table-responsive"
+        style={{ height: CONTAINER_HEIGHT, overflowY: 'auto' }}
+        onScroll={handleScroll}
+      >
+        <table className="clean-table" style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
             <tr>
               <th style={{ width: '80px' }}>ID</th>
@@ -153,8 +218,9 @@ export const LiveAllocationEditor: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {allocations.map((alloc) => (
-              <tr key={alloc.bookingId}>
+            {topPadding > 0 && <tr style={{ height: topPadding }} aria-hidden="true" />}
+            {visibleItems.map((alloc) => (
+              <tr key={alloc.bookingId} style={{ height: ROW_HEIGHT }}>
                 <td><strong>#{alloc.bookingId}</strong></td>
                 <td><code>{getDeviceLabel(alloc.deviceId)}</code></td>
                 <td>{getEngineerLabel(alloc.engineerId)}</td>
@@ -191,7 +257,8 @@ export const LiveAllocationEditor: React.FC = () => {
                 </td>
               </tr>
             ))}
-            {allocations.length === 0 && (
+            {bottomPadding > 0 && <tr style={{ height: bottomPadding }} aria-hidden="true" />}
+            {filteredAllocations.length === 0 && (
               <tr>
                 <td colSpan={8} className="empty-grid-msg">
                   {fetchingAllocations ? 'Loading allocations...' : 'No allocations found in database.'}
