@@ -6,6 +6,6 @@ namespace EquipmentAllocations.Services
     public interface IBookingService
     {
         IEnumerable<BookingDto> GetAll();
-        bool Delete(int id);
+        bool Delete(long id);
     }
 }

@@ -46,8 +46,8 @@ namespace EquipmentAllocations.Services
                 var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
                 if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
 
-                // Check overlapping booking for same device
-                var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
+                // Check overlapping booking for same device (ignore cancelled bookings)
+                var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.Status.ToLower() != "cancelled" && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
                 if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
 
                 var entity = new Booking
@@ -102,7 +102,7 @@ namespace EquipmentAllocations.Services
             }
         }
 
-        public async Task<BookingDto> UpdateBookingAsync(int id, UpdateBookingDto dto)
+        public async Task<BookingDto> UpdateBookingAsync(long id, UpdateBookingDto dto)
         {
             await using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -113,7 +113,7 @@ namespace EquipmentAllocations.Services
 
                 var device = await _db.Devices.FindAsync(dto.DeviceId);
                 if (device == null) throw new InvalidOperationException($"Device {dto.DeviceId} not found");
-                if (!string.Equals(device.Status, "available", StringComparison.OrdinalIgnoreCase))
+                if (entity.DeviceId != dto.DeviceId && !string.Equals(device.Status, "available", StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException($"Device {dto.DeviceId} is not available for allocation (current status: '{device.Status}')");
                 }
@@ -121,8 +121,11 @@ namespace EquipmentAllocations.Services
                 var engineer = await _db.Engineers.FindAsync(dto.EngineerId);
                 if (engineer == null) throw new InvalidOperationException($"Engineer {dto.EngineerId} not found");
 
-                var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.BookingId != id && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
-                if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
+                if (!string.Equals(dto.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+                {
+                    var overlap = await _db.Bookings.AnyAsync(b => b.DeviceId == dto.DeviceId && b.BookingId != id && b.Status.ToLower() != "cancelled" && b.StartDate < dto.EndDate && b.EndDate > dto.StartDate);
+                    if (overlap) throw new InvalidOperationException("Device already booked for the requested range");
+                }
 
                 entity.DeviceId = dto.DeviceId;
                 entity.EngineerId = dto.EngineerId;

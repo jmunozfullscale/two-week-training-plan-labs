@@ -31,7 +31,7 @@ namespace EquipmentAllocations.Services
             }).ToList();
         }
 
-        public bool Delete(int id)
+        public bool Delete(long id)
         {
             var entity = _db.Bookings.Find(id);
             if (entity == null) return false;

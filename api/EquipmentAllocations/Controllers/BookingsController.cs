@@ -29,7 +29,7 @@ namespace EquipmentAllocations.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<BookingDto>> Put(int id, [FromBody] UpdateBookingDto dto)
+        public async Task<ActionResult<BookingDto>> Put(long id, [FromBody] UpdateBookingDto dto)
         {
             try
             {
@@ -47,7 +47,7 @@ namespace EquipmentAllocations.Controllers
         }
 
         [HttpDelete("{id}")]
-        public ActionResult Delete(int id)
+        public ActionResult Delete(long id)
         {
             var success = _service.Delete(id);
             if (!success) return NotFound();
