@@ -9,6 +9,7 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(window, 'alert').mockImplementation(() => {});
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -16,20 +17,30 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders correctly and submits successfully', async () => {
+  it('renders correctly and creates an allocation via the modal', async () => {
     fetchMock.mockImplementation(async (url: string) => {
-      if (url === '/api/devices' || url === '/api/employees' || url === '/api/allocations') {
+      if (url === '/api/devices') {
+        return { ok: true, json: async () => [{ deviceId: 1, kind: 'Laptop', assetTag: 'LP-101', status: 'Available' }] };
+      }
+      if (url === '/api/employees') {
+        return { ok: true, json: async () => [{ engineerId: 1, fullName: 'John Doe', office: 'HQ' }] };
+      }
+      if (url === '/api/allocations') {
         return { ok: true, json: async () => [] };
       }
       if (url === '/api/allocations/issue') {
-        return { ok: true, status: 201, json: async () => ({ id: 1 }) };
+        return { ok: true, status: 201, json: async () => ({ bookingId: 1 }) };
       }
       return { ok: true, json: async () => [] };
     });
 
     render(<LiveAllocationEditor />);
 
-    // Make form dirty to enable save button
+    // Click "+ Add Allocation" button to open modal
+    const addBtn = screen.getByRole('button', { name: /\+ Add Allocation/i });
+    fireEvent.click(addBtn);
+
+    // Fill notes in the modal
     const payloadInput = screen.getByLabelText(/Notes \/ Payload/i);
     fireEvent.change(payloadInput, { target: { value: 'Updated payload for test' } });
 
@@ -44,10 +55,6 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
       expect(issueCall).toBeTruthy();
       expect(issueCall[1].method).toBe('POST');
       expect(issueCall[1].headers['Idempotency-Key']).toBeTruthy();
-    });
-
-    await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Allocation created successfully!');
     });
   });
 
@@ -74,7 +81,7 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
               json: async () => ({ message: 'Idempotency key conflict' }),
             };
           }
-          return { ok: true, status: 201, json: async () => ({ id: 2 }) };
+          return { ok: true, status: 201, json: async () => ({ bookingId: 2 }) };
         }
       }
 
@@ -82,8 +89,9 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     });
 
     render(<LiveAllocationEditor />);
-    
-    // Make form dirty
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Allocation/i }));
+
     const payloadInput = screen.getByLabelText(/Notes \/ Payload/i);
     fireEvent.change(payloadInput, { target: { value: 'Updated payload for test 2' } });
 
@@ -92,7 +100,7 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     // First submission
     fireEvent.click(saveButton);
 
-    // Wait for the error to show up, meaning loading finished and button is enabled again
+    // Wait for the error to show up
     await waitFor(() => {
       expect(screen.getByText(/Server returned 500/i)).toBeInTheDocument();
     });
@@ -138,21 +146,134 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
 
     render(<LiveAllocationEditor />);
 
-    // Make form dirty
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Allocation/i }));
+
     const payloadInput = screen.getByLabelText(/Notes \/ Payload/i);
     fireEvent.change(payloadInput, { target: { value: 'Updated payload for test 3' } });
 
     const saveButton = screen.getByRole('button', { name: /save allocation/i });
     fireEvent.click(saveButton);
 
-    // Assert that the global error banner and field-level errors appear
+    // Assert that the global error banner displays the validation error
     await waitFor(() => {
       const errorBanner = screen.getByRole('alert');
       expect(errorBanner).toHaveTextContent(/One or more validation errors occurred./i);
+      expect(errorBanner).toHaveTextContent(/Device ID must be greater than 0./i);
+      expect(errorBanner).toHaveTextContent(/Start date is invalid./i);
+    });
+  });
 
-      // We expect the custom hook to map 'DeviceId' -> 'deviceId' and render it under the input
-      expect(screen.getByText('Device ID must be greater than 0.')).toBeInTheDocument();
-      expect(screen.getByText('Start date is invalid.')).toBeInTheDocument();
+  it('updates an existing allocation via the edit modal', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/devices') {
+        return { ok: true, json: async () => [{ deviceId: 1, kind: 'Laptop', assetTag: 'LP-101', status: 'Available' }] };
+      }
+      if (url === '/api/employees') {
+        return { ok: true, json: async () => [{ engineerId: 1, fullName: 'Jane Smith', office: 'Remote' }] };
+      }
+      if (url === '/api/allocations') {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              bookingId: 42,
+              deviceId: 1,
+              engineerId: 1,
+              startDate: '2026-09-01T09:00:00',
+              endDate: '2026-09-05T17:00:00',
+              status: 'Confirmed',
+              payload: 'Original notes',
+            },
+          ],
+        };
+      }
+      if (url === '/api/allocations/42') {
+        return {
+          ok: true,
+          json: async () => ({ bookingId: 42 }),
+        };
+      }
+      return { ok: true, json: async () => [] };
+    });
+
+    render(<LiveAllocationEditor />);
+
+    // Wait for the allocation row to appear
+    await waitFor(() => {
+      expect(screen.getByText('#42')).toBeInTheDocument();
+    });
+
+    // Click the Edit button
+    const editBtn = screen.getByTitle('Edit');
+    fireEvent.click(editBtn);
+
+    // Check modal title is "Edit Allocation"
+    expect(screen.getByText('Edit Allocation')).toBeInTheDocument();
+
+    // Change status and payload
+    const statusSelect = screen.getByLabelText(/^Status/i);
+    fireEvent.change(statusSelect, { target: { value: 'Completed' } });
+
+    const payloadInput = screen.getByLabelText(/Notes \/ Payload/i);
+    fireEvent.change(payloadInput, { target: { value: 'Updated via edit modal' } });
+
+    // Submit update
+    const updateBtn = screen.getByRole('button', { name: /update allocation/i });
+    fireEvent.click(updateBtn);
+
+    await waitFor(() => {
+      const putCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/42');
+      expect(putCall).toBeTruthy();
+      expect(putCall[1].method).toBe('PUT');
+      const body = JSON.parse(putCall[1].body);
+      expect(body.status).toBe('Completed');
+      expect(body.payload).toBe('Updated via edit modal');
+    });
+  });
+
+  it('deletes an allocation after user confirmation', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/devices' || url === '/api/employees') {
+        return { ok: true, json: async () => [] };
+      }
+      if (url === '/api/allocations') {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              bookingId: 99,
+              deviceId: 1,
+              engineerId: 1,
+              startDate: '2026-09-01T09:00:00',
+              endDate: '2026-09-05T17:00:00',
+              status: 'Confirmed',
+              payload: 'To delete',
+            },
+          ],
+        };
+      }
+      if (url === '/api/allocations/99') {
+        return { ok: true, status: 204, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => [] };
+    });
+
+    render(<LiveAllocationEditor />);
+
+    await waitFor(() => {
+      expect(screen.getByText('#99')).toBeInTheDocument();
+    });
+
+    // Click Delete button
+    const deleteBtn = screen.getByTitle('Delete');
+    fireEvent.click(deleteBtn);
+
+    expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete allocation #99?');
+
+    await waitFor(() => {
+      const deleteCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/99');
+      expect(deleteCall).toBeTruthy();
+      expect(deleteCall[1].method).toBe('DELETE');
     });
   });
 });

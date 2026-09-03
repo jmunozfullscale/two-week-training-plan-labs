@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import { useEngineers } from '../hooks/useEngineers';
-import './AllocationEditor.css'; // Reuse the clean white styling
+import type { EngineerItem } from '../hooks/useEngineers';
+import { Modal } from './Modal';
+import './AllocationEditor.css'; // For general table layout
 
 export const AddEngineer: React.FC = () => {
+  const { engineers, loading: fetching, createEngineer, updateEngineer, deleteEngineer } = useEngineers();
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  
+  // Form state
   const [fullName, setFullName] = useState('');
   const [office, setOffice] = useState('');
   const [email, setEmail] = useState('');
@@ -11,7 +19,34 @@ export const AddEngineer: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { engineers, loading: fetching, createEngineer } = useEngineers();
+  const openAddModal = () => {
+    setEditingId(null);
+    setFullName('');
+    setOffice('');
+    setEmail('');
+    setNotes('');
+    setSaveError(null);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (eng: EngineerItem) => {
+    setEditingId(eng.engineerId);
+    setFullName(eng.fullName);
+    setOffice(eng.office);
+    setEmail(eng.email);
+    setNotes(eng.notes || '');
+    setSaveError(null);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (eng: EngineerItem) => {
+    if (!window.confirm(`Are you sure you want to delete engineer ${eng.fullName}?`)) return;
+    try {
+      await deleteEngineer(eng.engineerId);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,12 +54,13 @@ export const AddEngineer: React.FC = () => {
     setSaveError(null);
 
     try {
-      await createEngineer({ fullName, office, email, notes });
-      alert('Engineer added successfully!');
-      setFullName('');
-      setOffice('');
-      setEmail('');
-      setNotes('');
+      const data = { fullName, office, email, notes };
+      if (editingId) {
+        await updateEngineer(editingId, data);
+      } else {
+        await createEngineer(data);
+      }
+      setIsModalOpen(false);
     } catch (err: unknown) {
       setSaveError((err as Error).message);
     } finally {
@@ -35,86 +71,18 @@ export const AddEngineer: React.FC = () => {
   return (
     <div className="allocation-editor-container">
       <div className="card-header">
-        <h2>Add Engineer</h2>
-      </div>
-
-      {saveError && (
-        <div className="error-banner" role="alert">
-          <span className="error-icon">⚠️</span>
-          <span>{saveError}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="editor-form">
-        <div className="form-grid">
-          <div className="form-group">
-            <label htmlFor="fullName">Full Name</label>
-            <input
-              id="fullName"
-              type="text"
-              required
-              maxLength={120}
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="office">Office</label>
-            <input
-              id="office"
-              type="text"
-              required
-              maxLength={60}
-              value={office}
-              onChange={(e) => setOffice(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              maxLength={200}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={saving}
-            />
-          </div>
-        </div>
-
-        <div className="form-group full-width" style={{ marginTop: '1rem' }}>
-          <label htmlFor="notes">Notes</label>
-          <textarea
-            id="notes"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={saving}
-          />
-        </div>
-
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Engineer'}
-          </button>
-        </div>
-      </form>
-
-      {/* Engineer Entries Grid */}
-      <section className="entries-grid-section">
-        <div className="entries-grid-header">
-          <h3>Engineers List</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <h2>Engineers</h2>
           <span className="entries-count-badge">
             {engineers.length} {engineers.length === 1 ? 'Engineer' : 'Engineers'}
           </span>
         </div>
+        <button className="btn btn-primary" onClick={openAddModal}>
+          + Add Engineer
+        </button>
+      </div>
 
-        <div className="table-responsive">
+      <div className="table-responsive">
           <table className="clean-table">
             <thead>
               <tr>
@@ -123,6 +91,7 @@ export const AddEngineer: React.FC = () => {
                 <th>Office</th>
                 <th>Email</th>
                 <th>Notes</th>
+                <th style={{ width: '100px', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -133,11 +102,25 @@ export const AddEngineer: React.FC = () => {
                   <td>{eng.office}</td>
                   <td>{eng.email}</td>
                   <td>{eng.notes || '—'}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button 
+                      title="Edit" 
+                      onClick={() => openEditModal(eng)} 
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', marginRight: '0.5rem' }}>
+                      ✏️
+                    </button>
+                    <button 
+                      title="Delete" 
+                      onClick={() => handleDelete(eng)} 
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}>
+                      🗑️
+                    </button>
+                  </td>
                 </tr>
               ))}
               {engineers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="empty-grid-msg">
+                  <td colSpan={6} className="empty-grid-msg">
                     {fetching ? 'Loading engineers...' : 'No engineers found in database.'}
                   </td>
                 </tr>
@@ -145,8 +128,88 @@ export const AddEngineer: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </section>
+
+      <Modal 
+        isOpen={isModalOpen} 
+        onClose={() => !saving && setIsModalOpen(false)} 
+        title={editingId ? 'Edit Engineer' : 'Add Engineer'}
+      >
+        {saveError && (
+          <div className="error-banner" role="alert" style={{ marginBottom: '1rem' }}>
+            <span className="error-icon">⚠️</span>
+            <span>{saveError}</span>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="editor-form">
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label htmlFor="fullName">Full Name</label>
+            <input
+              id="fullName"
+              type="text"
+              required
+              maxLength={120}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label htmlFor="office">Office</label>
+            <input
+              id="office"
+              type="text"
+              required
+              maxLength={60}
+              value={office}
+              onChange={(e) => setOffice(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              required
+              maxLength={200}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+            <label htmlFor="notes">Notes</label>
+            <textarea
+              id="notes"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={saving}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div className="form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => setIsModalOpen(false)} 
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : (editingId ? 'Update Engineer' : 'Save Engineer')}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
-

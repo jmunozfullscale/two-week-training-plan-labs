@@ -3,7 +3,6 @@ export interface AllocationDraft {
   engineerId: number;
   startDate: string;
   endDate: string;
-  status: string;
   payload?: string;
 }
 

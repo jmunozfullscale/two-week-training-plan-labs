@@ -12,7 +12,6 @@ const DEFAULT_DRAFT: AllocationDraft = {
   engineerId: 0,
   startDate: '',
   endDate: '',
-  status: 'Pending',
   payload: '',
 };
 
@@ -36,10 +35,6 @@ export const defaultValidationRule: ValidationRule = (draft: AllocationDraft): F
     errors.endDate = 'End date is required.';
   } else if (draft.startDate && new Date(draft.endDate) <= new Date(draft.startDate)) {
     errors.endDate = 'End date must be strictly after start date.';
-  }
-
-  if (!draft.status || draft.status.trim() === '') {
-    errors.status = 'Status is required.';
   }
 
   return errors;

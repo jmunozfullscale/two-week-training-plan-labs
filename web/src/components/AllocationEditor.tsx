@@ -13,6 +13,7 @@ export interface AllocationEditorProps extends UseAllocationEditorOptions {
   onSuccess?: () => void;
   deviceOptions?: SelectOption[];
   engineerOptions?: SelectOption[];
+  requireDirty?: boolean;
 }
 
 export const AllocationEditor: React.FC<AllocationEditorProps> = ({
@@ -20,6 +21,7 @@ export const AllocationEditor: React.FC<AllocationEditorProps> = ({
   onSuccess,
   deviceOptions,
   engineerOptions,
+  requireDirty = true,
   ...hookOptions
 }) => {
   const {
@@ -156,26 +158,6 @@ export const AllocationEditor: React.FC<AllocationEditorProps> = ({
             )}
           </div>
 
-          {/* Status */}
-          <div className={`form-group ${fieldErrors.status ? 'has-error' : ''}`}>
-            <label htmlFor="status">Status</label>
-            <select
-              id="status"
-              value={draft.status}
-              onChange={(e) => updateField('status', e.target.value)}
-              disabled={loading}
-            >
-              <option value="Pending">Pending</option>
-              <option value="Approved">Approved</option>
-              <option value="Active">Active</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-            {fieldErrors.status && (
-              <span className="field-error">{fieldErrors.status}</span>
-            )}
-          </div>
-
           {/* Payload / Notes */}
           <div className="form-group full-width">
             <label htmlFor="payload">Notes / Payload</label>
@@ -202,7 +184,7 @@ export const AllocationEditor: React.FC<AllocationEditorProps> = ({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={loading || !isValid || !isDirty}
+            disabled={loading || !isValid || (requireDirty && !isDirty)}
           >
             {loading ? 'Saving...' : 'Save Allocation'}
           </button>
