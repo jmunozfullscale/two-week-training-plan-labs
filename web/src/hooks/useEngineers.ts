@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { z } from 'zod';
-import type { Result } from '../types/result.ts';
-import { EngineerSchema } from '../schemas/allocation.ts';
+import type { Result } from '../types/result';
+import { EngineerSchema } from '../schemas/allocation';
 
 export type EngineerItem = z.infer<typeof EngineerSchema>;
 
@@ -14,7 +14,7 @@ export function useEngineers() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/employees', { signal });
+      const res = await fetch('/api/employees', signal ? { signal } : {});
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
       }

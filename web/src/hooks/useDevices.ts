@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { z } from 'zod';
-import type { Result } from '../types/result.ts';
-import { DeviceSchema } from '../schemas/allocation.ts';
+import type { Result } from '../types/result';
+import { DeviceSchema } from '../schemas/allocation';
 
 export type DeviceItem = z.infer<typeof DeviceSchema>;
 
@@ -14,7 +14,7 @@ export function useDevices() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/devices', { signal });
+      const res = await fetch('/api/devices', signal ? { signal } : {});
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
       }

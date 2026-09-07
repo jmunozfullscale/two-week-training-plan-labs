@@ -69,12 +69,13 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
 
       if (url === '/api/allocations/issue') {
         issueCalls++;
+        const headers = options?.headers as Record<string, string> | undefined;
         if (issueCalls === 1) {
-          capturedIdempotencyKey = (options?.headers as Record<string, string>)['Idempotency-Key'] || '';
+          capturedIdempotencyKey = headers?.['Idempotency-Key'] || '';
           return { ok: false, status: 500, statusText: 'Internal Server Error' };
         }
         if (issueCalls === 2) {
-          if ((options?.headers as Record<string, string>)['Idempotency-Key'] === capturedIdempotencyKey) {
+          if (headers?.['Idempotency-Key'] === capturedIdempotencyKey) {
             return {
               ok: false,
               status: 409,
@@ -114,11 +115,15 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
       expect((issueCallsList[0]![1].headers as Record<string, string>)['Idempotency-Key']).toBe((issueCallsList[1]![1].headers as Record<string, string>)['Idempotency-Key']);
     });
 
-    // Verify UI catches the 409 conflict and shows the error
+    // Verify UI catches the 409 replay as soft-success and shows the user-friendly message
     await waitFor(() => {
       const errorBanner = screen.getByRole('alert');
-      expect(errorBanner).toHaveTextContent(/Allocation already exists \(idempotency conflict\)/i);
+      expect(errorBanner).toHaveTextContent(/This allocation was already created/i);
     });
+
+    // Verify allocations were refreshed on 409 soft-success
+    const getCalls = fetchMock.mock.calls.filter((call: unknown[]) => call[0] === '/api/allocations');
+    expect(getCalls.length).toBeGreaterThan(1);
   });
 
   it('renders field-level validation errors from a 400 ProblemDetails response', async () => {

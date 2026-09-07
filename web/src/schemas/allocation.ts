@@ -21,9 +21,9 @@ export const BookingSchema = z.object({
   bookingId: z.number(),
   deviceId: z.number(),
   engineerId: z.number(),
-  startDate: z.string(),
-  endDate: z.string(),
-  status: z.string(),
+  startDate: z.string().datetime({ local: true, offset: true }),
+  endDate: z.string().datetime({ local: true, offset: true }),
+  status: z.enum(['Confirmed', 'Completed', 'Cancelled']),
   createdOn: z.string().nullable().optional(),
   payload: z.string().nullable().optional(),
 });

@@ -1,9 +1,9 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
-import { useAllocations } from '../hooks/useAllocations.ts';
-import type { AllocationItem } from '../hooks/useAllocations.ts';
+import { useAllocations } from '../hooks/useAllocations';
+import type { AllocationItem } from '../hooks/useAllocations';
 import { useDevices } from '../hooks/useDevices';
-import { useEngineers } from '../hooks/useEngineers.ts';
-import { useVirtualScroll } from '../hooks/useVirtualScroll.ts';
+import { useEngineers } from '../hooks/useEngineers';
+import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import { Modal } from './Modal';
 import './AllocationEditor.css';
 
@@ -21,7 +21,7 @@ export const LiveAllocationEditor: React.FC = () => {
   const [engineerId, setEngineerId] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [status, setStatus] = useState('Confirmed');
+  const [status, setStatus] = useState<AllocationItem['status']>('Confirmed');
   const [payload, setPayload] = useState('');
 
   const [saving, setSaving] = useState(false);
@@ -358,7 +358,7 @@ export const LiveAllocationEditor: React.FC = () => {
                 id="status"
                 required
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as AllocationItem['status'])}
                 disabled={saving}
                 style={{ width: '100%' }}
               >

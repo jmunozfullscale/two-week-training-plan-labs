@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { z } from 'zod';
-import type { Result } from '../types/result.ts';
-import { BookingSchema } from '../schemas/allocation.ts';
+import type { Result } from '../types/result';
+import { BookingSchema } from '../schemas/allocation';
 
 export type AllocationItem = z.infer<typeof BookingSchema>;
 
@@ -14,15 +14,15 @@ export function useAllocations() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/allocations', { signal });
+      const res = await fetch('/api/allocations', signal ? { signal } : {});
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
       }
       const data = await res.json();
-      
+
       // Zod boundary validation
       const validatedData = z.array(BookingSchema).parse(data);
-      
+
       // Only set UI state if the API payload matches our strict schema expectations
       setAllocations(validatedData);
     } catch (err: unknown) {
@@ -60,12 +60,15 @@ export function useAllocations() {
           status: draft.status,
           payload: draft.payload,
         }),
-        signal,
+        ...(signal ? { signal } : {}),
       });
 
       if (!res.ok) {
         if (res.status === 409) {
-          return { success: false, error: 'Allocation already exists (idempotency conflict).' };
+          // Soft-success: Idempotency replay indicates the allocation landed previously.
+          // Refresh allocations and inform the user "gently".
+          await fetchAllocations();
+          return { success: false, error: 'This allocation was already created.' };
         }
 
         if (res.status === 400) {
@@ -89,18 +92,12 @@ export function useAllocations() {
   };
 
   const createAllocation = async (
-    draft: {
-      deviceId: number;
-      engineerId: number;
-      startDate: string;
-      endDate: string;
-      payload?: string;
-    },
+    draft: Omit<AllocationItem, 'bookingId' | 'createdOn' | 'status'>,
     idempotencyKey?: string,
     signal?: AbortSignal
   ): Promise<Result> => {
     return issueAllocation(
-      { ...draft, status: 'Confirmed' } as Omit<AllocationItem, 'bookingId' | 'createdOn'>,
+      { ...draft, status: 'Confirmed' },
       idempotencyKey || crypto.randomUUID(),
       signal
     );
@@ -108,14 +105,7 @@ export function useAllocations() {
 
   const updateAllocation = async (
     id: number,
-    data: {
-      deviceId: number;
-      engineerId: number;
-      startDate: string;
-      endDate: string;
-      status: string;
-      payload?: string;
-    }
+    data: Omit<AllocationItem, 'bookingId' | 'createdOn'>
   ): Promise<Result> => {
     try {
       const res = await fetch(`/api/allocations/${id}`, {
@@ -136,7 +126,7 @@ export function useAllocations() {
           } else {
             msg = problem.message || problem.title || msg;
           }
-        } catch {}
+        } catch { }
         return { success: false, error: msg };
       }
 
@@ -158,7 +148,7 @@ export function useAllocations() {
         try {
           const problem = await res.json();
           msg = problem.message || problem.title || msg;
-        } catch {}
+        } catch { }
         return { success: false, error: msg };
       }
 
