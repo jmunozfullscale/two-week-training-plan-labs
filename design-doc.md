@@ -11,6 +11,8 @@ The architecture _strictly_ adheres to a separated frontend-backend model:
 - **Backend**: C# / .NET 10 Web API utilizing Entity Framework Core (EF Core) backed by SQL (and SQLite as a backup) for transactional data management.
 - **Frontend**: React 19 (Vite) single-page application utilizing TypeScript in strict mode, Redux Toolkit for state management, and custom virtualization hooks.
 
+*(Note on Architecture & Stack: The proposed modernization from the seed spec to .NET 10 and React 19 is recorded under **ADR-001** (Pending EM Review) in [README.md](./README.md).)*
+
 ---
 
 ## 2. Backend Architecture (C# / .NET 10)
@@ -29,8 +31,10 @@ The main complexity of the backend lies in safely allocating equipment. This is 
 
 - **EF Core Database Transactions**: To prevent race conditions, the service opens explicit database transactions (`BeginTransactionAsync`). If any validation fails (e.g. device is unavailable), the transaction is fully rolled back.
 - **Idempotency Strategy**: The `POST /api/allocations/issue` endpoint expects an `Idempotency-Key` HTTP header.
-  - The API _hashes_ the request payload against this key.
-  - If a duplicate request arrives (due to UI retries, network delays, or other reasons like double-clicks), the API detects the conflict and safely rejects it with HTTP `409 Conflict` instead of creating duplicate rows in the database.
+  - **Key-Only Lookup**: The API performs a key-only query (`_db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey)`) prior to state validation.
+  - **Replay Detection**: If a request with an existing key arrives (due to double-clicks, network retries, or client replays), the API detects the conflict and rejects it with HTTP `409 Conflict` (throwing `IdempotencyConflictException`), safely preventing duplicate records.
+  - **Known Limitation & Collision Risk**: The current backend does not hash or compare the request payload. Reusing an existing idempotency key with different dates, device, or engineer will match on the key alone and return 409 rather than validating payload equivalence. True hash fingerprinting is deferred for future evolution (see Section 6).
+  - **Frontend Soft-Success Handling**: Rather than presenting an alarming error to a user who simply double-clicked, the frontend intercepts 409, triggers `await fetchAllocations()` to ensure the table displays the landed booking, and presents a gentle notice: `"This allocation was already created."`
 
 ### 2.3 API Controllers (`/Controllers`)
 
@@ -76,33 +80,84 @@ Instead of raw `fetch` calls scattered in components, the app abstracts network 
 - **Discriminated Union Results**: To prevent "silent" unhandled promise rejections, the mutation functions in these hooks do not `throw`. Instead, they return a structured `Result` union type (`{ success: true } | { success: false, error: string }`). This lets components handle failure paths without wrapping everything up in `try/catch` blocks.
 - **AbortController**: Hooks support `AbortController` signaling to cancel pending requests if a component unmounts prematurely, preventing memory leaks and React state warnings.
 
----
+### 3.4 Component Hierarchy & Architecture Tree
 
+The frontend architecture is organized into an explicit hierarchy separating presentation, form handling, state management, and hooks:
+
+```text
+App
+ ├── Header & Navigation
+ ├── AllocationsGrid (Read-heavy, high-throughput virtualization)
+ │    ├── Virtual Scroll Container (useVirtualScroll)
+ │    │    └── AllocationRow (Individual row renderer with status badges)
+ │    └── Redux Store Integration (allocationsSlice)
+ │         ├── State: items[], filterText, status
+ │         └── Memoized Selector: selectFilteredAllocations (createSelector)
+ ├── LiveAllocationEditor (Transactional interactive CRUD manager)
+ │    ├── Filter / Search Toolbar (Local state filter query)
+ │    ├── Virtualized Allocation Table (useVirtualScroll windowing)
+ │    │    └── Allocation Table Rows (Inline edit & delete actions)
+ │    └── Modal (Portal overlay dialog with keyboard/backdrop dismiss)
+ │         ├── Error Banner (role="alert", ProblemDetails / soft-success feedback)
+ │         └── Allocation Form (Controlled inputs: Device, Engineer, Dates, Payload)
+ └── Reusable Custom Hooks Layer
+      ├── useAllocations (API sync, Zod boundary validation, issueAllocation + Idempotency)
+      ├── useDevices (Device entity CRUD & dropdown lookup state)
+      ├── useEngineers (Engineer entity CRUD & dropdown lookup state)
+      └── useVirtualScroll (Dynamic windowing, overscan buffer, viewport padding)
+```
+
+- **Data & Event Flow Across the Tree**:
+  1. `App` mounts both views. `AllocationsGrid` subscribes to the Redux store, receiving memoized filtered arrays computed by `selectFilteredAllocations`.
+  2. `LiveAllocationEditor` maintains its own active `idempotencyKeyRef` across user input iterations. When the user opens the modal and submits, `issueAllocation` injects the `Idempotency-Key` header.
+  3. All network mutations route through the custom hooks layer (`useAllocations`, `useDevices`, `useEngineers`), keeping components purely focused on UI state and user interaction.
+
+---
+  
 ## 4. Type Safety & Boundary Validation
 
 By Day 9, the architecture was "fortified" with strict compilation rules and runtime boundary checks, eliminating "silent" runtime errors.
 
 ### 4.1 Strict TypeScript Compilation
 
-- **Configuration**: `tsconfig.app.json` has both `"strict": true` and `"noUncheckedIndexedAccess": true` explicitly enabled.
-- **Zero `any` Policy**: The codebase strictly forbids the use of the `any` type to bypass the type checker (using `unknown` and explicit type guards instead).
-- **Impact**: The compiler aggressively warns against unsafe code. For example, it forces devs to explicitly handle scenarios where array lookups (`items[i]`) or `.find()` methods return `undefined`. This strictly prevents standard `Cannot read properties of undefined` UI crashes.
+- **Configuration**: `tsconfig.app.json` has all three Day 9 strictness flags explicitly enabled: `"strict": true`, `"noUncheckedIndexedAccess": true`, and `"exactOptionalPropertyTypes": true`.
+- **Zero `any` Policy**: The codebase strictly forbids the use of the `any` type to bypass the type checker (using `unknown` and explicit type guards instead). Type assertions (`as`) are avoided to preserve genuine type safety.
+- **Impact**: The compiler aggressively warns against unsafe code, prevents accidental `undefined` assignments to optional keys, and forces devs to explicitly handle scenarios where array lookups (`items[i]`) or `.find()` methods return `undefined`. This strictly prevents standard `Cannot read properties of undefined` UI crashes.
 
 ### 4.2 Boundary Validation via Zod
 
 While TypeScript provides compile-time guarantees, it is actually blind to the actual shape of JSON returning from network requests at runtime.
 
-- **Zod Schemas**: We defined strict schema validators in `src/schemas/allocation.ts` (`DeviceSchema`, `EngineerSchema`, `BookingSchema`).
+- **Zod Schemas**: We defined strict schema validators in `src/schemas/allocation.ts` (`DeviceSchema`, `EngineerSchema`, `BookingSchema`). In particular, `BookingSchema` validates ISO 8601 date strings via `z.string().datetime({ local: true, offset: true })` and restricts `status` strictly to the documented domain enum: `['Confirmed', 'Completed', 'Cancelled']`.
 - **The Sync Mechanism**: The TypeScript interfaces are directly inferred from the Zod schemas (`export type DeviceItem = z.infer<typeof DeviceSchema>`), ensuring a single source of truth.
 - **How The Validation Flow Works**:
   1. The hook runs `fetch()` and receives untyped JSON.
   2. The data is intercepted via `z.array(Schema).parse(data)`.
-  3. **Result**: If the C# backend payload structure shifts or corrupts unexpectedly, Zod instantly intercepts it and throws an explicit validation error. The corrupted data is blocked from entering the Redux store or React state, ensuring complete component stability.
+  3. **Result**: If the C# backend payload structure shifts, corrupts, or contains non-date strings or unexpected statuses, Zod instantly intercepts it and throws an explicit validation error. The corrupted data is blocked from entering the Redux store or React state, ensuring complete component stability.
 
 ---
 
 ## 5. Security & Error Handling
 
 - **Consistent Error Schemas**: The backend utilizes ASP.NET Core `ProblemDetails` to return standard [RFC 7807 JSON error](https://www.rfc-editor.org/info/rfc7807/) JSON responses.
-- **Graceful Degradation**: The frontend hooks safely catch these structured errors and map them to explicit `Result` return objects, ensuring the UI layer displays human-readable banners rather than crashing the application.
+- **Graceful Degradation**: The frontend hooks safely catch these structured errors and map them to explicit `Result` return objects (`{ success: true } | { success: false; error: string }`), ensuring the UI layer displays human-readable banners rather than crashing the application.
 - **Input Sanitization**: Both the frontend (via React controlled inputs) and backend (via EF Core parameterized queries) inherently protect against XSS/SQL Injection attacks.
+
+---
+
+## 6. What I'd Defer
+
+In accordance with Day 9 architectural guidelines and production engineering trade-offs, the following items are deliberately scoped out of the initial milestone as honest deferred candidates:
+
+1. **Idempotency Payload-Hashing (SHA-256 Fingerprinting)**:
+   - *Current Implementation*: Key-only lookup (`FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey)`).
+   - *Known Limitation*: Replaying an identical key with altered request parameters triggers a 409 conflict instead of being detected as an invalid/divergent replay.
+   - *Deferred Evolution*: Store a SHA-256 cryptographic hash of the raw request payload alongside the idempotency key. On replay, compare hashes: if identical, replay the previous result; if mismatched, return HTTP `422 Unprocessable Entity`.
+
+2. **Real Authentication & Authorization**:
+   - *Current Implementation*: Open REST API endpoints with no user principal or identity token validation.
+   - *Deferred Evolution*: Implement ASP.NET Core JWT Bearer authentication and OAuth 2.0 / OpenID Connect (OIDC). Introduce Role-Based Access Control (RBAC) to restrict equipment provisioning (Devices/Engineers CRUD) to administrators while allowing standard engineers to view and self-book equipment.
+
+3. **Server-Side Pagination & Query Filtering**:
+   - *Current Implementation*: Unbounded fetch (`GET /api/allocations`) with client-side virtualization (`useVirtualScroll`) and Redux memoized filtering.
+   - *Deferred Evolution*: Introduce SQL keyset (cursor-based) or offset pagination (`$skip`/`$top`), server-side search query parameters (`?search=...&status=...`), and count metadata to efficiently support 100,000+ historical allocations without unbounded memory consumption on client devices.
