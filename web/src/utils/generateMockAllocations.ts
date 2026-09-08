@@ -48,11 +48,11 @@ export function generateMockAllocations(count: number): AllocationGridItem[] {
   const items: AllocationGridItem[] = [];
 
   for (let i = 1; i <= count; i++) {
-    const device = DEVICES[i % DEVICES.length];
-    const engineer = ENGINEERS[i % ENGINEERS.length];
-    const location = LOCATIONS[i % LOCATIONS.length];
-    const priority = PRIORITIES[i % PRIORITIES.length];
-    const status = STATUSES[i % STATUSES.length];
+    const device = DEVICES[i % DEVICES.length]!;
+    const engineer = ENGINEERS[i % ENGINEERS.length]!;
+    const location = LOCATIONS[i % LOCATIONS.length]!;
+    const priority = PRIORITIES[i % PRIORITIES.length]!;
+    const status = STATUSES[i % STATUSES.length]!;
 
     const dayStart = 1 + (i % 28);
     const dayEnd = Math.min(28, dayStart + 2);

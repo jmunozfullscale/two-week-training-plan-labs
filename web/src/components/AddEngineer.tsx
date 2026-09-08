@@ -41,10 +41,9 @@ export const AddEngineer: React.FC = () => {
 
   const handleDelete = async (eng: EngineerItem) => {
     if (!window.confirm(`Are you sure you want to delete engineer ${eng.fullName}?`)) return;
-    try {
-      await deleteEngineer(eng.engineerId);
-    } catch (err: any) {
-      alert(err.message);
+    const result = await deleteEngineer(eng.engineerId);
+    if (!result.success) {
+      alert(result.error);
     }
   };
 
@@ -53,19 +52,20 @@ export const AddEngineer: React.FC = () => {
     setSaving(true);
     setSaveError(null);
 
-    try {
-      const data = { fullName, office, email, notes };
-      if (editingId) {
-        await updateEngineer(editingId, data);
-      } else {
-        await createEngineer(data);
-      }
-      setIsModalOpen(false);
-    } catch (err: unknown) {
-      setSaveError((err as Error).message);
-    } finally {
-      setSaving(false);
+    const data = { fullName, office, email, notes };
+    let result;
+    if (editingId) {
+      result = await updateEngineer(editingId, data);
+    } else {
+      result = await createEngineer(data);
     }
+
+    if (result.success) {
+      setIsModalOpen(false);
+    } else {
+      setSaveError(result.error);
+    }
+    setSaving(false);
   };
 
   return (

@@ -46,10 +46,9 @@ export const AddDevice: React.FC = () => {
 
   const handleDelete = async (dev: DeviceItem) => {
     if (!window.confirm(`Are you sure you want to delete device ${dev.assetTag}?`)) return;
-    try {
-      await deleteDevice(dev.deviceId);
-    } catch (err: any) {
-      alert(err.message);
+    const result = await deleteDevice(dev.deviceId);
+    if (!result.success) {
+      alert(result.error);
     }
   };
 
@@ -58,19 +57,27 @@ export const AddDevice: React.FC = () => {
     setSaving(true);
     setSaveError(null);
 
-    try {
-      const data = { assetTag, kind, status, purchasedOn, notes };
-      if (editingId) {
-        await updateDevice(editingId, data);
-      } else {
-        await createDevice(data);
-      }
-      setIsModalOpen(false);
-    } catch (err: unknown) {
-      setSaveError((err as Error).message);
-    } finally {
-      setSaving(false);
+    const data = {
+      assetTag,
+      kind,
+      status,
+      purchasedOn: purchasedOn ? new Date(purchasedOn).toISOString() : undefined,
+      notes,
+    };
+    
+    let result;
+    if (editingId) {
+      result = await updateDevice(editingId, data);
+    } else {
+      result = await createDevice(data);
     }
+
+    if (result.success) {
+      setIsModalOpen(false);
+    } else {
+      setSaveError(result.error);
+    }
+    setSaving(false);
   };
 
   return (

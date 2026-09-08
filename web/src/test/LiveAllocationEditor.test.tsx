@@ -1,9 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest';
 import { LiveAllocationEditor } from '../components/LiveAllocationEditor';
 
 describe('LiveAllocationEditor E2E Integration Flow', () => {
-  let fetchMock: any;
+  let fetchMock: Mock;
 
   beforeEach(() => {
     fetchMock = vi.fn();
@@ -51,10 +51,10 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      const issueCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/issue');
+      const issueCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/issue') as [string, RequestInit] | undefined;
       expect(issueCall).toBeTruthy();
-      expect(issueCall[1].method).toBe('POST');
-      expect(issueCall[1].headers['Idempotency-Key']).toBeTruthy();
+      expect(issueCall![1].method).toBe('POST');
+      expect((issueCall![1].headers as Record<string, string>)['Idempotency-Key']).toBeTruthy();
     });
   });
 
@@ -62,19 +62,20 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     let capturedIdempotencyKey = '';
     let issueCalls = 0;
 
-    fetchMock.mockImplementation(async (url: string, options?: any) => {
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
       if (url === '/api/devices' || url === '/api/employees' || url === '/api/allocations') {
         return { ok: true, json: async () => [] };
       }
 
       if (url === '/api/allocations/issue') {
         issueCalls++;
+        const headers = options?.headers as Record<string, string> | undefined;
         if (issueCalls === 1) {
-          capturedIdempotencyKey = options.headers['Idempotency-Key'];
+          capturedIdempotencyKey = headers?.['Idempotency-Key'] || '';
           return { ok: false, status: 500, statusText: 'Internal Server Error' };
         }
         if (issueCalls === 2) {
-          if (options.headers['Idempotency-Key'] === capturedIdempotencyKey) {
+          if (headers?.['Idempotency-Key'] === capturedIdempotencyKey) {
             return {
               ok: false,
               status: 409,
@@ -109,16 +110,20 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      const issueCallsList = fetchMock.mock.calls.filter((call: any[]) => call[0] === '/api/allocations/issue');
+      const issueCallsList = fetchMock.mock.calls.filter((call: unknown[]) => call[0] === '/api/allocations/issue') as [string, RequestInit][];
       expect(issueCallsList.length).toBe(2);
-      expect(issueCallsList[0][1].headers['Idempotency-Key']).toBe(issueCallsList[1][1].headers['Idempotency-Key']);
+      expect((issueCallsList[0]![1].headers as Record<string, string>)['Idempotency-Key']).toBe((issueCallsList[1]![1].headers as Record<string, string>)['Idempotency-Key']);
     });
 
-    // Verify UI catches the 409 conflict and shows the error
+    // Verify UI catches the 409 replay as soft-success and shows the user-friendly message
     await waitFor(() => {
       const errorBanner = screen.getByRole('alert');
-      expect(errorBanner).toHaveTextContent(/Allocation already exists \(idempotency conflict\)/i);
+      expect(errorBanner).toHaveTextContent(/This allocation was already created/i);
     });
+
+    // Verify allocations were refreshed on 409 soft-success
+    const getCalls = fetchMock.mock.calls.filter((call: unknown[]) => call[0] === '/api/allocations');
+    expect(getCalls.length).toBeGreaterThan(1);
   });
 
   it('renders field-level validation errors from a 400 ProblemDetails response', async () => {
@@ -222,10 +227,10 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     fireEvent.click(updateBtn);
 
     await waitFor(() => {
-      const putCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/42');
+      const putCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/42') as [string, RequestInit] | undefined;
       expect(putCall).toBeTruthy();
-      expect(putCall[1].method).toBe('PUT');
-      const body = JSON.parse(putCall[1].body);
+      expect(putCall![1].method).toBe('PUT');
+      const body = JSON.parse(putCall![1].body as string);
       expect(body.status).toBe('Completed');
       expect(body.payload).toBe('Updated via edit modal');
     });
@@ -271,9 +276,9 @@ describe('LiveAllocationEditor E2E Integration Flow', () => {
     expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete allocation #99?');
 
     await waitFor(() => {
-      const deleteCall = fetchMock.mock.calls.find((call: any[]) => call[0] === '/api/allocations/99');
+      const deleteCall = fetchMock.mock.calls.find((call: unknown[]) => call[0] === '/api/allocations/99') as [string, RequestInit] | undefined;
       expect(deleteCall).toBeTruthy();
-      expect(deleteCall[1].method).toBe('DELETE');
+      expect(deleteCall![1].method).toBe('DELETE');
     });
   });
 });
